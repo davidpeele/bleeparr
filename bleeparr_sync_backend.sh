@@ -1,0 +1,16 @@
+#!/bin/bash
+echo 'Syncing backend source files...'
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/main.py')"
+cp "/mnt/data/main.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/main.py"
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/tasks.py')"
+cp "/mnt/data/tasks.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/tasks.py"
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/api/routes.py')"
+cp "/mnt/data/routes.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/api/routes.py"
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/api/sonarr.py')"
+cp "/mnt/data/sonarr.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/api/sonarr.py"
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/api/bleeparr_core.py')"
+cp "/mnt/data/bleeparr_core.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/api/bleeparr_core.py"
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/db/models.py')"
+cp "/mnt/data/models.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/db/models.py"
+mkdir -p "$(dirname '/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/db/crud.py')"
+cp "/mnt/data/crud.py" "/mnt/storagepool/bleeparr/bleeparr_2_dev/bleeparr/backend/db/crud.py"

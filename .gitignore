@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+.venv/
+
+# Node
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+*.log
+*.sqlite3
+*.db
+frontend-build/
+
+# Environment config
+.env
+swears.txt
+
+# Docker
+*.pid
+*.sock
+*.tar
