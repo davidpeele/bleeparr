@@ -1,8 +1,8 @@
-version: '3.8'
 
 services:
   bleeparr:
     build: .
+    network_mode: host
     ports:
       - "5050:5050"
     volumes:
@@ -10,7 +10,7 @@ services:
       - ./swears.txt:/app/swears.txt
       - ./videos:/app/videos
     environment:
-      - SONARR_URL=http://host.docker.internal:8989
-      - SONARR_API_KEY=your_api_key_here
+      - SONARR_URL=http://10.20.30.60:8989
+      - SONARR_API_KEY=e310542e0d0b474caacb58e941d3cc33
       - UVICORN_PORT=5050
     restart: unless-stopped
