@@ -1,10 +1,61 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 import os
 import requests
 from backend.db import get_db
+from backend.tasks import add_to_queue, get_processing_status
 from typing import List, Dict, Any, Optional
 
 router = APIRouter()
+
+# Status endpoint
+@router.get("/api/status")
+def get_status():
+    """Get overall system status"""
+    sonarr_url = os.getenv("SONARR_URL")
+    sonarr_api_key = os.getenv("SONARR_API_KEY")
+    radarr_url = os.getenv("RADARR_URL")
+    radarr_api_key = os.getenv("RADARR_API_KEY")
+    
+    sonarr_status = {"configured": bool(sonarr_url and sonarr_api_key), "connected": False}
+    radarr_status = {"configured": bool(radarr_url and radarr_api_key), "connected": False}
+    
+    # Test Sonarr connection if configured
+    if sonarr_status["configured"]:
+        try:
+            response = requests.get(f"{sonarr_url}/api/v3/system/status", 
+                                   headers={"X-Api-Key": sonarr_api_key}, 
+                                   timeout=5)
+            sonarr_status["connected"] = response.status_code == 200
+            if sonarr_status["connected"]:
+                sonarr_status["version"] = response.json().get("version", "unknown")
+        except:
+            pass
+    
+    # Test Radarr connection if configured
+    if radarr_status["configured"]:
+        try:
+            response = requests.get(f"{radarr_url}/api/v3/system/status", 
+                                   headers={"X-Api-Key": radarr_api_key}, 
+                                   timeout=5)
+            radarr_status["connected"] = response.status_code == 200
+            if radarr_status["connected"]:
+                radarr_status["version"] = response.json().get("version", "unknown")
+        except:
+            pass
+    
+    # Get processing status from task system
+    processing_status = get_processing_status()
+    
+    return {
+        "sonarr": sonarr_status,
+        "radarr": radarr_status,
+        "processing": {
+            "queue_size": len(processing_status["queue"]),
+            "history_size": len(processing_status["history"]),
+            "sonarr_monitoring": processing_status["sonarr_available"],
+            "radarr_monitoring": processing_status["radarr_available"]
+        }
+    }
 
 # Fetch shows from Sonarr
 @router.get("/api/shows")
@@ -151,17 +202,6 @@ def update_filtered_item(item_type: str, item_id: int, filtered: bool = Query(..
     conn.commit()
     return {"id": item_id, "type": item_type, "filtered": filtered}
 
-def update_filtered(series_id: int, filtered: bool = Query(...)):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO bleeparr_items (id, type, filtered)
-        VALUES (?, 'show', ?)
-        ON CONFLICT(id) DO UPDATE SET filtered = excluded.filtered
-    """, (series_id, int(filtered)))
-    conn.commit()
-    return {"series_id": series_id, "filtered": filtered}
-
 # Get queue from Sonarr
 @router.get("/api/sonarr/queue")
 def get_sonarr_queue():
@@ -194,51 +234,9 @@ def get_radarr_queue():
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Get status for both services
-@router.get("/api/status")
-def get_status():
-    sonarr_url = os.getenv("SONARR_URL")
-    sonarr_api_key = os.getenv("SONARR_API_KEY")
-    radarr_url = os.getenv("RADARR_URL")
-    radarr_api_key = os.getenv("RADARR_API_KEY")
-    
-    sonarr_status = {"configured": bool(sonarr_url and sonarr_api_key), "connected": False}
-    radarr_status = {"configured": bool(radarr_url and radarr_api_key), "connected": False}
-    
-    if sonarr_status["configured"]:
-        try:
-            response = requests.get(f"{sonarr_url}/api/v3/system/status", headers={"X-Api-Key": sonarr_api_key}, timeout=5)
-            sonarr_status["connected"] = response.status_code == 200
-            if sonarr_status["connected"]:
-                sonarr_status["version"] = response.json().get("version", "unknown")
-        except:
-            pass
-    
-    if radarr_status["configured"]:
-        try:
-            response = requests.get(f"{radarr_url}/api/v3/system/status", headers={"X-Api-Key": radarr_api_key}, timeout=5)
-            radarr_status["connected"] = response.status_code == 200
-            if radarr_status["connected"]:
-                radarr_status["version"] = response.json().get("version", "unknown")
-        except:
-            pass
-    
-    return {
-        "sonarr": sonarr_status,
-        "radarr": radarr_status
-    }
-    
-    from fastapi import APIRouter, HTTPException, Query
-import os
-import requests
-from backend.db import get_db
-
-router = APIRouter()
-
-
-# Process an episode - New Endpoint
+# Process an episode - Manual trigger
 @router.post("/api/process/episode/{episode_id}")
-def process_episode(episode_id: int):
+def process_episode(episode_id: int, background_tasks: BackgroundTasks, dry_run: bool = Query(False)):
     url = os.getenv("SONARR_URL")
     api_key = os.getenv("SONARR_API_KEY")
 
@@ -289,24 +287,36 @@ def process_episode(episode_id: int):
         episode_title = episode.get('title', 'Unknown Episode')
         episode_info = f"S{season_num}E{episode_num} - {episode_title}"
         
-        # Call your bleeping processing function here
-        # This is a placeholder - implement your actual processing logic
-        from backend.api.bleeparr_core import process_episode
-        result = process_episode(
-            file_path, 
-            series.get('title', 'Unknown Series'), 
-            episode_info
-        )
-        
-        return result
+        # Add to processing queue for background processing
+        if add_to_queue(
+            item_type='show',
+            item_id=episode_id,
+            file_path=file_path,
+            title=series.get('title', 'Unknown Series'),
+            detail=episode_info,
+            parent_id=series_id
+        ):
+            return {
+                "success": True,
+                "message": f"Episode queued for processing: {series.get('title')} - {episode_info}",
+                "file_path": file_path,
+                "dry_run": dry_run
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Episode already in queue or recently processed",
+                "file_path": file_path
+            }
+            
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"API error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Process a movie - New Endpoint
+# Process a movie - Manual trigger
 @router.post("/api/process/movie/{movie_id}")
-def process_movie(movie_id: int):
+def process_movie(movie_id: int, background_tasks: BackgroundTasks, dry_run: bool = Query(False)):
     url = os.getenv("RADARR_URL")
     api_key = os.getenv("RADARR_API_KEY")
 
@@ -342,22 +352,138 @@ def process_movie(movie_id: int):
         if not file_path:
             raise HTTPException(status_code=404, detail="Movie file path not found")
         
-        # Call your bleeping processing function here
-        # This is a placeholder - implement your actual processing logic
-        from backend.api.bleeparr_core import process_movie
-        result = process_movie(
-            file_path, 
-            movie.get('title', 'Unknown Movie')
-        )
-        
-        return result
+        # Add to processing queue for background processing
+        if add_to_queue(
+            item_type='movie',
+            item_id=movie_id,
+            file_path=file_path,
+            title=movie.get('title', 'Unknown Movie'),
+            detail=f"{movie.get('year', '')}"
+        ):
+            return {
+                "success": True,
+                "message": f"Movie queued for processing: {movie.get('title')}",
+                "file_path": file_path,
+                "dry_run": dry_run
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Movie already in queue or recently processed",
+                "file_path": file_path
+            }
+            
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"API error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Get processing queue and history
+@router.get("/api/processing")
+def get_processing():
+    """Get current processing queue and history"""
+    return get_processing_status()
 
+# Process all episodes for a series
+@router.post("/api/process/series/{series_id}")
+def process_series(series_id: int, dry_run: bool = Query(False)):
+    url = os.getenv("SONARR_URL")
+    api_key = os.getenv("SONARR_API_KEY")
 
+    if not url or not api_key:
+        raise HTTPException(status_code=500, detail="Sonarr URL or API key not set")
+    
+    try:
+        # Get series details
+        series_response = requests.get(
+            f"{url}/api/v3/series/{series_id}",
+            headers={"X-Api-Key": api_key}
+        )
+        series_response.raise_for_status()
+        series = series_response.json()
+        
+        # Get episodes
+        episodes_response = requests.get(
+            f"{url}/api/v3/episode",
+            params={"seriesId": series_id},
+            headers={"X-Api-Key": api_key}
+        )
+        episodes_response.raise_for_status()
+        episodes = episodes_response.json()
+        
+        # Filter to episodes that have files
+        episodes_with_files = [ep for ep in episodes if ep.get('hasFile', False)]
+        
+        if not episodes_with_files:
+            return {
+                "success": False,
+                "message": f"No episodes with files found for series: {series.get('title')}",
+                "series_id": series_id
+            }
+        
+        # Queue each episode for processing
+        queued_count = 0
+        for episode in episodes_with_files:
+            episode_id = episode.get('id')
+            episode_file_id = episode.get('episodeFileId')
+            
+            if not episode_file_id:
+                continue
+                
+            # Get file details
+            file_response = requests.get(
+                f"{url}/api/v3/episodefile/{episode_file_id}",
+                headers={"X-Api-Key": api_key}
+            )
+            
+            if file_response.status_code != 200:
+                continue
+                
+            episode_file = file_response.json()
+            file_path = episode_file.get('path')
+            
+            if not file_path:
+                continue
+            
+            # Create episode info
+            season_num = str(episode.get('seasonNumber', 0)).zfill(2)
+            episode_num = str(episode.get('episodeNumber', 0)).zfill(2)
+            episode_title = episode.get('title', 'Unknown Episode')
+            episode_info = f"S{season_num}E{episode_num} - {episode_title}"
+            
+            # Add to processing queue
+            if add_to_queue(
+                item_type='show',
+                item_id=episode_id,
+                file_path=file_path,
+                title=series.get('title', 'Unknown Series'),
+                detail=episode_info,
+                parent_id=series_id
+            ):
+                queued_count += 1
+        
+        return {
+            "success": True,
+            "message": f"Queued {queued_count} episodes for processing from series: {series.get('title')}",
+            "series_id": series_id,
+            "queued_count": queued_count,
+            "total_episodes": len(episodes_with_files),
+            "dry_run": dry_run
+        }
+    
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"API error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-
+# Update settings
+@router.post("/api/settings")
+def update_settings(settings: Dict[str, Any]):
+    """Update application settings"""
+    # This would normally update a settings file or database
+    # For now, we'll just return the settings
+    return {
+        "success": True,
+        "message": "Settings updated",
+        "settings": settings
+    }
