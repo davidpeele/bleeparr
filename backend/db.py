@@ -34,9 +34,9 @@ def init_db():
         # Create table for processing history
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS processing_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
                 item_id INTEGER NOT NULL,
-                item_type TEXT NOT NULL CHECK (type IN ('show', 'movie')),
+                item_type TEXT NOT NULL CHECK (item_type IN ('show', 'movie')),
                 file_path TEXT NOT NULL,
                 title TEXT NOT NULL,
                 detail TEXT,

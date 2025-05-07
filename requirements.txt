@@ -3,3 +3,6 @@ uvicorn
 sqlalchemy
 requests
 python-dotenv
+aiofiles
+pydantic
+asyncio
