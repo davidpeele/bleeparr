@@ -51,6 +51,7 @@ class Bleeparr:
         Returns:
             Dictionary with processing results
         """
+        logger.info(f"Attempting to process file: {file_path}")
         if not os.path.exists(file_path):
             logger.error(f"File not found: {file_path}")
             return {

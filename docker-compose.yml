@@ -16,6 +16,8 @@ services:
       - ./videos:/app/videos
       # Add a volume for the database
       - ./data:/app/data
+      # Mount the database directory
+      - ./backend:/app/backend
     environment:
       # Sonarr configuration
       - SONARR_URL=http://10.20.30.60:8989

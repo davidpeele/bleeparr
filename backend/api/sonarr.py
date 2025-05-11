@@ -159,6 +159,53 @@ class SonarrAPI:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting queue: {str(e)}")
             return []
+
+    def get_history(self, event_type=None, since=None, limit=10):
+        """
+        Get history items from Sonarr
+        
+        Args:
+            event_type: Optional filter by event type (e.g., 'downloadFolderImported')
+            since: Optional datetime to filter by (only get items since this time)
+            limit: Maximum number of items to return
+        
+        Returns:
+            List of history items
+        """
+        try:
+            params = {'pageSize': limit}
+            
+            if event_type:
+                params['eventType'] = event_type
+                
+            response = requests.get(
+                f"{self.base_url}/api/v3/history", 
+                headers=self.headers,
+                params=params
+            )
+            
+            if response.status_code == 200:
+                history_data = response.json()
+                records = history_data.get('records', [])
+
+                # Filter by date if needed
+                if since and isinstance(since, datetime):
+                    # Convert to ISO format string
+                    since_str = since.isoformat()
+                    records = [
+                        record for record in records 
+                        if record.get('date', '') >= since_str
+                    ]
+
+                logger.info(f"Retrieved {len(records)} history items from Sonarr")
+                return records
+            else:
+                logger.error(f"Failed to get history: HTTP {response.status_code}")
+                return []
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error getting history: {str(e)}")
+            return []
+
     
     def set_monitored_series(self, series_ids: List[int]) -> None:
         """

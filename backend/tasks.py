@@ -5,6 +5,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from backend.db import get_db
+from backend.db import add_to_processing_queue, get_processing_queue, remove_from_processing_queue, is_in_queue_or_history, save_processing_history, get_processing_history
 from api.sonarr import SonarrAPI
 from api.radarr import RadarrAPI
 from api.bleeparr_core import process_episode, process_movie
@@ -86,12 +87,16 @@ async def poll_sonarr():
         # Get queue items
         queue_items = api.get_queue()
         logger.info(f"Found {len(queue_items)} items in Sonarr queue")
-        
+
         # Get recently downloaded episodes
         # We'll check episodes downloaded in the last hour to avoid missing anything
-        history_items = api.get_history(event_type="downloadFolderImported", 
-                                      since=datetime.now() - timedelta(hours=1))
-        logger.info(f"Found {len(history_items)} recently imported episodes in Sonarr history")
+        try:
+            history_items = api.get_history(event_type="downloadFolderImported", 
+                                          since=datetime.now() - timedelta(hours=1))
+            logger.info(f"Found {len(history_items)} recently imported episodes in Sonarr history")
+        except Exception as e:
+            logger.error(f"Error fetching Sonarr history: {e}")
+            history_items = []
         
         # Process imported episodes
         for item in history_items:
@@ -217,26 +222,26 @@ def is_in_queue_or_history(item):
 
 async def process_queue():
     """Process items in the queue"""
-    if not PROCESSING_QUEUE:
+    queue_items = get_processing_queue()
+    logger.info(f"Checking processing queue, currently contains {len(queue_items)} items")
+    
+    if not queue_items:
         return
     
-    logger.info(f"Processing queue with {len(PROCESSING_QUEUE)} items")
+    logger.info(f"Processing queue with {len(queue_items)} items")
     
-    # Process the queue (copy to avoid modification during iteration)
-    queue_copy = PROCESSING_QUEUE.copy()
-    
-    for item in queue_copy:
+    for item in queue_items:
         try:
-            logger.info(f"Processing {item['type']}: {item['title']} - {item['detail']}")
+            logger.info(f"Processing {item['item_type']}: {item['title']} - {item['detail']}")
             
             result = None
-            if item['type'] == 'show':
+            if item['item_type'] == 'show':
                 result = process_episode(
                     item['file_path'],
                     item['title'],
                     item['detail']
                 )
-            elif item['type'] == 'movie':
+            elif item['item_type'] == 'movie':
                 result = process_movie(
                     item['file_path'],
                     item['title']
@@ -244,34 +249,42 @@ async def process_queue():
             
             # Add to history and remove from queue
             if result:
-                item['result'] = result
-                item['processed_at'] = datetime.now().isoformat()
-                item['success'] = result.get('success', False)
+                process_result = {
+                    'id': item['item_id'],
+                    'type': item['item_type'],
+                    'file_path': item['file_path'],
+                    'title': item['title'],
+                    'detail': item['detail'],
+                    'parent_id': item['parent_id'],
+                    'success': result.get('success', False),
+                    'result': result
+                }
                 
-                PROCESSING_HISTORY.append(item)
-                # Trim history if needed
-                if len(PROCESSING_HISTORY) > MAX_HISTORY:
-                    PROCESSING_HISTORY.pop(0)
+                # Save to history
+                save_processing_history(process_result)
                 
                 # Log result
                 if result.get('success'):
-                    logger.info(f"Successfully processed {item['type']}: {item['title']} - {item['detail']}")
+                    logger.info(f"Successfully processed {item['item_type']}: {item['title']} - {item['detail']}")
                     logger.info(f"Found {result.get('swears_found', 0)} swear words")
                 else:
-                    logger.error(f"Failed to process {item['type']}: {item['title']} - {item['detail']}")
+                    logger.error(f"Failed to process {item['item_type']}: {item['title']} - {item['detail']}")
                     logger.error(f"Error: {result.get('error', 'Unknown error')}")
                 
                 # Remove from queue
-                PROCESSING_QUEUE.remove(item)
+                remove_from_processing_queue(item['id'])
         
         except Exception as e:
             logger.error(f"Error processing queue item: {e}")
 
 def get_processing_status():
     """Get current processing status"""
+    queue = get_processing_queue()
+    history = get_processing_history(limit=20)
+    
     return {
-        'queue': PROCESSING_QUEUE,
-        'history': PROCESSING_HISTORY,
+        'queue': queue,
+        'history': history,
         'sonarr_available': SONARR_AVAILABLE,
         'radarr_available': RADARR_AVAILABLE
     }
@@ -285,12 +298,11 @@ def add_to_queue(item_type, item_id, file_path, title, detail="", parent_id=None
         'detail': detail,
         'id': item_id,
         'parent_id': parent_id or item_id,
-        'timestamp': datetime.now().isoformat(),
         'manual': True
     }
     
-    if not is_in_queue_or_history(queue_item):
-        PROCESSING_QUEUE.append(queue_item)
+    if not is_in_queue_or_history(item_id, item_type):
+        add_to_processing_queue(queue_item)
         logger.info(f"Manually queued {item_type} for processing: {title}")
         return True
     else:

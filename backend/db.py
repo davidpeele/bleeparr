@@ -31,6 +31,21 @@ def init_db():
             )
         """)
         
+        # Create table for processing queue
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS processing_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                item_type TEXT NOT NULL CHECK (item_type IN ('show', 'movie')),
+                file_path TEXT NOT NULL,
+                title TEXT NOT NULL,
+                detail TEXT,
+                parent_id INTEGER,
+                manual BOOLEAN NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Create table for processing history
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS processing_history (
@@ -158,3 +173,64 @@ def get_processing_history(limit=100, offset=0, item_type=None):
         
         columns = [col[0] for col in cursor.description]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
+def add_to_processing_queue(item):
+    """Add an item to the processing queue in the database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO processing_queue 
+            (item_id, item_type, file_path, title, detail, parent_id, manual, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                item.get('id'),
+                item.get('type'),
+                item.get('file_path'),
+                item.get('title'),
+                item.get('detail', ''),
+                item.get('parent_id'),
+                1 if item.get('manual', False) else 0
+            )
+        )
+        conn.commit()
+    return True
+
+def get_processing_queue():
+    """Get all items in the processing queue"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM processing_queue ORDER BY created_at")
+        
+        columns = [col[0] for col in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+def remove_from_processing_queue(queue_id):
+    """Remove an item from the processing queue"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM processing_queue WHERE id = ?", (queue_id,))
+        conn.commit()
+    return True
+
+def is_in_queue_or_history(item_id, item_type):
+    """Check if an item is in the queue or history"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Check queue
+        cursor.execute(
+            "SELECT 1 FROM processing_queue WHERE item_id = ? AND item_type = ? LIMIT 1", 
+            (item_id, item_type)
+        )
+        if cursor.fetchone():
+            return True
+            
+        # Check history
+        cursor.execute(
+            "SELECT 1 FROM processing_history WHERE item_id = ? AND item_type = ? LIMIT 1", 
+            (item_id, item_type)
+        )
+        if cursor.fetchone():
+            return True
+            
+    return False
