@@ -184,8 +184,8 @@ def add_to_processing_queue(item):
             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
-                item.get('id'),
-                item.get('type'),
+                item.get('id') or item.get('item_id'),  # Try both field names
+                item.get('type') or item.get('item_type'),  # Try both field names
                 item.get('file_path'),
                 item.get('title'),
                 item.get('detail', ''),

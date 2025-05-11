@@ -295,6 +295,8 @@ def add_to_queue(item_type, item_id, file_path, title, detail="", parent_id=None
     from backend.db import is_in_queue_or_history
     
     queue_item = {
+        'type': type,         # Changed 'item_type' to 'type' to match expected field
+        'id': id,             # Changed 'item_id' to 'id' to match expected field
         'item_type': item_type,
         'item_id': item_id,
         'file_path': file_path,
