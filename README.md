@@ -34,8 +34,16 @@ Bleeparr 2.0 is a profanity-cleaning tool for TV shows and movies that integrate
    ```
 
 2. Create or modify the `swears.txt` file with the words you want to censor, one per line.
+   Prepare the swears.txt file:
+   ```bash
+   # Copy the example file to create your own swears.txt
+   cp swears.default.txt swears.txt
+   
+   # Optionally edit the file to customize the list of words to censor
+   nano swears.txt
 
 3. Edit the `docker-compose.yml` file to set your Sonarr/Radarr URLs and API keys.
+
 
 4. Start the application:
    ```bash
