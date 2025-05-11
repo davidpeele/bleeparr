@@ -4,7 +4,6 @@ import time
 import logging
 import os
 from datetime import datetime, timedelta
-from backend.db import get_db
 from backend.db import add_to_processing_queue, get_processing_queue, remove_from_processing_queue, is_in_queue_or_history, save_processing_history, get_processing_history
 from api.sonarr import SonarrAPI
 from api.radarr import RadarrAPI
@@ -133,7 +132,7 @@ async def poll_sonarr():
                     }
                     
                     # Add to queue if not already in queue or recently processed
-                    if not is_in_queue_or_history(queue_item):
+                    if not is_item_already_processed(queue_item):
                         PROCESSING_QUEUE.append(queue_item)
                         logger.info(f"Queued episode for processing: {series_title} - {episode_info}")
         
@@ -197,15 +196,14 @@ async def poll_radarr():
                     }
                     
                     # Add to queue if not already in queue or recently processed
-                    if not is_in_queue_or_history(queue_item):
+                    if not is_item_already_processed(queue_item):
                         PROCESSING_QUEUE.append(queue_item)
                         logger.info(f"Queued movie for processing: {movie_title}")
         
     except Exception as e:
         logger.error(f"Error polling Radarr: {e}")
 
-
-def is_in_queue_or_history(item):
+def is_item_already_processed(item):
     """Check if an item is already in the queue or has been recently processed"""
     item_path = item.get('file_path')
     
@@ -292,11 +290,9 @@ def get_processing_status():
 
 def add_to_queue(item_type, item_id, file_path, title, detail="", parent_id=None):
     """Manually add an item to the processing queue"""
-    from backend.db import is_in_queue_or_history
-    
     queue_item = {
-        'type': type,         # Changed 'item_type' to 'type' to match expected field
-        'id': id,             # Changed 'item_id' to 'id' to match expected field
+        'type': item_type,         # Changed 'item_type' to 'type' to match expected field
+        'id': item_id,             # Changed 'item_id' to 'id' to match expected field
         'item_type': item_type,
         'item_id': item_id,
         'file_path': file_path,
