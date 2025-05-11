@@ -18,6 +18,10 @@ services:
       - ./data:/app/data
       # Mount the database directory
       - ./backend:/app/backend
+      # Mount the TV shows directory
+      - /mnt/storagepool/TV:/app/media/tv
+
+
     environment:
       # Sonarr configuration
       - SONARR_URL=http://10.20.30.60:8989

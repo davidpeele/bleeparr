@@ -282,6 +282,31 @@ def process_episode(episode_id: int, background_tasks: BackgroundTasks, dry_run:
         file_path = episode_file.get('path')
         if not file_path:
             raise HTTPException(status_code=404, detail="Episode file path not found")
+
+        # Check if file exists and try path mapping if needed
+        if not os.path.exists(file_path):
+            logger.warning(f"File does not exist at path: {file_path}")
+            
+            # Map path from Sonarr to Docker container path
+            if file_path.startswith('/mnt/storagepool/TV/'):
+                container_path = file_path.replace('/mnt/storagepool/TV/', '/app/media/tv/')
+                logger.info(f"Trying mapped path: {container_path}")
+                
+                if os.path.exists(container_path):
+                    logger.info(f"Found file at mapped path: {container_path}")
+                    file_path = container_path
+                else:
+                    raise HTTPException(status_code=404, detail=f"Episode file not found at mapped path")
+            else:
+                base_name = os.path.basename(file_path)
+                alternative_path = f"/app/videos/{base_name}"
+                logger.info(f"Trying alternative path: {alternative_path}")
+                
+                if os.path.exists(alternative_path):
+                    logger.info(f"Found file at alternative path: {alternative_path}")
+                    file_path = alternative_path
+                else:
+                    raise HTTPException(status_code=404, detail=f"Episode file not found")
         
         # Create episode info
         season_num = str(episode.get('seasonNumber', 0)).zfill(2)
@@ -353,6 +378,32 @@ def process_movie(movie_id: int, background_tasks: BackgroundTasks, dry_run: boo
         file_path = movie_file.get('path')
         if not file_path:
             raise HTTPException(status_code=404, detail="Movie file path not found")
+
+
+        # Check if file exists and try path mapping if needed
+        if not os.path.exists(file_path):
+            logger.warning(f"File does not exist at path: {file_path}")
+            
+            # Map path from Sonarr to Docker container path
+            if file_path.startswith('/mnt/storagepool/TV/'):
+                container_path = file_path.replace('/mnt/storagepool/TV/', '/app/media/tv/')
+                logger.info(f"Trying mapped path: {container_path}")
+                
+                if os.path.exists(container_path):
+                    logger.info(f"Found file at mapped path: {container_path}")
+                    file_path = container_path
+                else:
+                    raise HTTPException(status_code=404, detail=f"Episode file not found at mapped path")
+            else:
+                base_name = os.path.basename(file_path)
+                alternative_path = f"/app/videos/{base_name}"
+                logger.info(f"Trying alternative path: {alternative_path}")
+                
+                if os.path.exists(alternative_path):
+                    logger.info(f"Found file at alternative path: {alternative_path}")
+                    file_path = alternative_path
+                else:
+                    raise HTTPException(status_code=404, detail=f"Episode file not found")
         
         # Add to processing queue for background processing
         if add_to_queue(
@@ -472,18 +523,32 @@ def process_series(series_id: int, dry_run: bool = Query(False)):
                 # Verify file exists
                 if not os.path.exists(file_path):
                     logger.warning(f"File does not exist at path: {file_path}")
-                    # Try to find the file in the mounted volume
-                    # This is needed because the path in Sonarr might not match the container path
-                    base_name = os.path.basename(file_path)
-                    alternative_path = f"/app/videos/{base_name}"
-                    logger.info(f"Trying alternative path: {alternative_path}")
-                    if os.path.exists(alternative_path):
-                        logger.info(f"Found file at alternative path: {alternative_path}")
-                        file_path = alternative_path
+                    
+                    # Map path from Sonarr to Docker container path
+                    if file_path.startswith('/mnt/storagepool/TV/'):
+                        # Replace the beginning of the path
+                        container_path = file_path.replace('/mnt/storagepool/TV/', '/app/media/tv/')
+                        logger.info(f"Trying mapped path: {container_path}")
+                        
+                        if os.path.exists(container_path):
+                            logger.info(f"Found file at mapped path: {container_path}")
+                            file_path = container_path
+                        else:
+                            logger.warning(f"File not found at mapped path either: {container_path}")
+                            continue
                     else:
-                        logger.warning(f"File not found at alternative path either: {alternative_path}")
-                        continue
-                
+                        # Try the original alternative path logic as a fallback
+                        base_name = os.path.basename(file_path)
+                        alternative_path = f"/app/videos/{base_name}"
+                        logger.info(f"Trying alternative path: {alternative_path}")
+                        
+                        if os.path.exists(alternative_path):
+                            logger.info(f"Found file at alternative path: {alternative_path}")
+                            file_path = alternative_path
+                        else:
+                            logger.warning(f"File not found at alternative path either: {alternative_path}")
+                            continue
+
                 # Create episode info
                 season_num = str(episode.get('seasonNumber', 0)).zfill(2)
                 episode_num = str(episode.get('episodeNumber', 0)).zfill(2)
