@@ -20,6 +20,8 @@ services:
       - ./backend:/app/backend
       # Mount the TV shows directory
       - /mnt/storagepool/TV:/app/media/tv
+      # Mount the directory CleanVid 
+      - /mnt/storagepool/CleanVid:/app/CleanVid
 
 
     environment:

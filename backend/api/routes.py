@@ -236,6 +236,46 @@ def get_radarr_queue():
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Debug endpoint to check file paths
+@router.get("/api/debug/file-paths")
+def debug_file_paths():
+    """Debug endpoint to check file paths"""
+    # Check common directories
+    directories = [
+        "/app/videos",
+        "/app/media",
+        "/app/CleanVid",
+        "/app/media/tv"
+    ]
+    
+    results = {}
+    for directory in directories:
+        exists = os.path.exists(directory)
+        is_dir = os.path.isdir(directory) if exists else False
+        results[directory] = {
+            "exists": exists,
+            "is_directory": is_dir
+        }
+        
+        if exists and is_dir:
+            # List top-level contents
+            try:
+                contents = os.listdir(directory)
+                results[directory]["contents"] = contents[:10]  # First 10 items
+                results[directory]["total_items"] = len(contents)
+            except Exception as e:
+                results[directory]["error"] = str(e)
+    
+    # Check file system mounts
+    try:
+        with open('/proc/mounts', 'r') as f:
+            mounts = f.read()
+        results["mounts"] = mounts
+    except Exception as e:
+        results["mounts_error"] = str(e)
+        
+    return results
+
 # Process an episode - Manual trigger
 @router.post("/api/process/episode/{episode_id}")
 def process_episode(episode_id: int, background_tasks: BackgroundTasks, dry_run: bool = Query(False)):
@@ -287,26 +327,96 @@ def process_episode(episode_id: int, background_tasks: BackgroundTasks, dry_run:
         if not os.path.exists(file_path):
             logger.warning(f"File does not exist at path: {file_path}")
             
-            # Map path from Sonarr to Docker container path
-            if file_path.startswith('/mnt/storagepool/TV/'):
-                container_path = file_path.replace('/mnt/storagepool/TV/', '/app/media/tv/')
-                logger.info(f"Trying mapped path: {container_path}")
+            # Try various path mappings
+            possible_paths = []
+            base_name = os.path.basename(file_path)
+            
+            # Extract series and season info for better path mapping
+            parts = file_path.split('/')
+            series_name = None
+            season_name = None
+            
+            for i, part in enumerate(parts):
+                if i > 0 and 'Season' in part:
+                    season_name = part
+                    series_name = parts[i-1]
+                    break
+            
+            # Map 1: Try direct CleanVid path
+            if 'CleanVid' in file_path:
+                # If the path has CleanVid but is not /app/CleanVid
+                if not file_path.startswith('/app/CleanVid'):
+                    clean_path = '/app/CleanVid' + file_path.split('CleanVid', 1)[1]
+                    possible_paths.append(clean_path)
+            
+            # Map 2: Try to construct path from known information
+            if series_name and season_name:
+                # Try CleanVid TV path
+                clean_tv_path = f'/app/CleanVid/TV/{series_name}/{season_name}/{base_name}'
+                possible_paths.append(clean_tv_path)
                 
-                if os.path.exists(container_path):
-                    logger.info(f"Found file at mapped path: {container_path}")
-                    file_path = container_path
-                else:
-                    raise HTTPException(status_code=404, detail=f"Episode file not found at mapped path")
+                # Try media TV path
+                media_tv_path = f'/app/media/tv/{series_name}/{season_name}/{base_name}'
+                possible_paths.append(media_tv_path)
+            
+            # Map 3: Try general locations
+            possible_paths.append(f'/app/videos/{base_name}')
+            possible_paths.append(f'/app/videos/{base_name.replace(" ", "_")}')
+            
+            # Try each possible path
+            found_path = None
+            for path in possible_paths:
+                logger.info(f"Trying alternative path: {path}")
+                if os.path.exists(path):
+                    logger.info(f"Found file at path: {path}")
+                    found_path = path
+                    break
+            
+            if found_path:
+                file_path = found_path
             else:
-                base_name = os.path.basename(file_path)
-                alternative_path = f"/app/videos/{base_name}"
-                logger.info(f"Trying alternative path: {alternative_path}")
+                # If we still can't find it, search recursively
+                logger.warning("Could not find file at any mapped paths, searching directories...")
+                search_dirs = ['/app/videos', '/app/CleanVid/TV', '/app/media/tv']
                 
-                if os.path.exists(alternative_path):
-                    logger.info(f"Found file at alternative path: {alternative_path}")
-                    file_path = alternative_path
-                else:
-                    raise HTTPException(status_code=404, detail=f"Episode file not found")
+                if series_name:
+                    # Add more specific search paths if we know the series name
+                    search_dirs.append(f'/app/CleanVid/TV/{series_name}')
+                    search_dirs.append(f'/app/media/tv/{series_name}')
+                
+                for search_dir in search_dirs:
+                    if os.path.exists(search_dir) and os.path.isdir(search_dir):
+                        logger.info(f"Searching recursively in: {search_dir}")
+                        for root, dirs, files in os.walk(search_dir):
+                            if base_name in files:
+                                found_path = os.path.join(root, base_name)
+                                logger.info(f"Found file by searching: {found_path}")
+                                file_path = found_path
+                                break
+                        if found_path:
+                            break
+                
+                if not found_path:
+                    # Last attempt: Try to clean up the filename and search again
+                    clean_base_name = base_name.replace("'", "").replace(":", "").replace(",", "").replace("&", "and")
+                    if clean_base_name != base_name:
+                        logger.info(f"Searching for cleaned filename: {clean_base_name}")
+                        for search_dir in search_dirs:
+                            if os.path.exists(search_dir) and os.path.isdir(search_dir):
+                                for root, dirs, files in os.walk(search_dir):
+                                    for file in files:
+                                        if file.replace("'", "").replace(":", "").replace(",", "").replace("&", "and") == clean_base_name:
+                                            found_path = os.path.join(root, file)
+                                            logger.info(f"Found file with similar name: {found_path}")
+                                            file_path = found_path
+                                            break
+                                    if found_path:
+                                        break
+                            if found_path:
+                                break
+                    
+                    if not found_path:
+                        raise HTTPException(status_code=404, detail=f"File not found after trying multiple paths. Original path: {file_path}")
         
         # Create episode info
         season_num = str(episode.get('seasonNumber', 0)).zfill(2)
@@ -379,31 +489,91 @@ def process_movie(movie_id: int, background_tasks: BackgroundTasks, dry_run: boo
         if not file_path:
             raise HTTPException(status_code=404, detail="Movie file path not found")
 
-
         # Check if file exists and try path mapping if needed
         if not os.path.exists(file_path):
             logger.warning(f"File does not exist at path: {file_path}")
             
-            # Map path from Sonarr to Docker container path
-            if file_path.startswith('/mnt/storagepool/TV/'):
-                container_path = file_path.replace('/mnt/storagepool/TV/', '/app/media/tv/')
-                logger.info(f"Trying mapped path: {container_path}")
+            # Try various path mappings
+            possible_paths = []
+            base_name = os.path.basename(file_path)
+            
+            # Extract movie title for better path mapping
+            movie_title = movie.get('title')
+            
+            # Map 1: Try direct CleanVid path
+            if 'CleanVid' in file_path:
+                # If the path has CleanVid but is not /app/CleanVid
+                if not file_path.startswith('/app/CleanVid'):
+                    clean_path = '/app/CleanVid' + file_path.split('CleanVid', 1)[1]
+                    possible_paths.append(clean_path)
+            
+            # Map 2: Try to construct path from known information
+            if movie_title:
+                # Try CleanVid Movies path
+                clean_movie_path = f'/app/CleanVid/Movies/{movie_title}/{base_name}'
+                possible_paths.append(clean_movie_path)
                 
-                if os.path.exists(container_path):
-                    logger.info(f"Found file at mapped path: {container_path}")
-                    file_path = container_path
-                else:
-                    raise HTTPException(status_code=404, detail=f"Episode file not found at mapped path")
+                # Try media Movies path if it exists
+                media_movie_path = f'/app/media/movies/{movie_title}/{base_name}'
+                possible_paths.append(media_movie_path)
+            
+            # Map 3: Try general locations
+            possible_paths.append(f'/app/videos/{base_name}')
+            possible_paths.append(f'/app/videos/{base_name.replace(" ", "_")}')
+            
+            # Try each possible path
+            found_path = None
+            for path in possible_paths:
+                logger.info(f"Trying alternative path: {path}")
+                if os.path.exists(path):
+                    logger.info(f"Found file at path: {path}")
+                    found_path = path
+                    break
+            
+            if found_path:
+                file_path = found_path
             else:
-                base_name = os.path.basename(file_path)
-                alternative_path = f"/app/videos/{base_name}"
-                logger.info(f"Trying alternative path: {alternative_path}")
+                # If we still can't find it, search recursively
+                logger.warning("Could not find file at any mapped paths, searching directories...")
+                search_dirs = ['/app/videos', '/app/CleanVid/Movies']
                 
-                if os.path.exists(alternative_path):
-                    logger.info(f"Found file at alternative path: {alternative_path}")
-                    file_path = alternative_path
-                else:
-                    raise HTTPException(status_code=404, detail=f"Episode file not found")
+                if movie_title:
+                    # Add more specific search paths if we know the movie title
+                    search_dirs.append(f'/app/CleanVid/Movies/{movie_title}')
+                
+                for search_dir in search_dirs:
+                    if os.path.exists(search_dir) and os.path.isdir(search_dir):
+                        logger.info(f"Searching recursively in: {search_dir}")
+                        for root, dirs, files in os.walk(search_dir):
+                            if base_name in files:
+                                found_path = os.path.join(root, base_name)
+                                logger.info(f"Found file by searching: {found_path}")
+                                file_path = found_path
+                                break
+                        if found_path:
+                            break
+                
+                if not found_path:
+                    # Last attempt: Try to clean up the filename and search again
+                    clean_base_name = base_name.replace("'", "").replace(":", "").replace(",", "").replace("&", "and")
+                    if clean_base_name != base_name:
+                        logger.info(f"Searching for cleaned filename: {clean_base_name}")
+                        for search_dir in search_dirs:
+                            if os.path.exists(search_dir) and os.path.isdir(search_dir):
+                                for root, dirs, files in os.walk(search_dir):
+                                    for file in files:
+                                        if file.replace("'", "").replace(":", "").replace(",", "").replace("&", "and") == clean_base_name:
+                                            found_path = os.path.join(root, file)
+                                            logger.info(f"Found file with similar name: {found_path}")
+                                            file_path = found_path
+                                            break
+                                    if found_path:
+                                        break
+                            if found_path:
+                                break
+                    
+                    if not found_path:
+                        raise HTTPException(status_code=404, detail=f"Movie file not found after trying multiple paths. Original path: {file_path}")
         
         # Add to processing queue for background processing
         if add_to_queue(
@@ -524,30 +694,97 @@ def process_series(series_id: int, dry_run: bool = Query(False)):
                 if not os.path.exists(file_path):
                     logger.warning(f"File does not exist at path: {file_path}")
                     
-                    # Map path from Sonarr to Docker container path
-                    if file_path.startswith('/mnt/storagepool/TV/'):
-                        # Replace the beginning of the path
-                        container_path = file_path.replace('/mnt/storagepool/TV/', '/app/media/tv/')
-                        logger.info(f"Trying mapped path: {container_path}")
+                    # Try various path mappings
+                    possible_paths = []
+                    base_name = os.path.basename(file_path)
+                    
+                    # Extract series and season info for better path mapping
+                    parts = file_path.split('/')
+                    series_name = None
+                    season_name = None
+                    
+                    for i, part in enumerate(parts):
+                        if i > 0 and 'Season' in part:
+                            season_name = part
+                            series_name = parts[i-1]
+                            break
+                    
+                    # Map 1: Try direct CleanVid path
+                    if 'CleanVid' in file_path:
+                        # If the path has CleanVid but is not /app/CleanVid
+                        if not file_path.startswith('/app/CleanVid'):
+                            clean_path = '/app/CleanVid' + file_path.split('CleanVid', 1)[1]
+                            possible_paths.append(clean_path)
+                    
+                    # Map 2: Try to construct path from known information
+                    if series_name and season_name:
+                        # Try CleanVid TV path
+                        clean_tv_path = f'/app/CleanVid/TV/{series_name}/{season_name}/{base_name}'
+                        possible_paths.append(clean_tv_path)
                         
-                        if os.path.exists(container_path):
-                            logger.info(f"Found file at mapped path: {container_path}")
-                            file_path = container_path
-                        else:
-                            logger.warning(f"File not found at mapped path either: {container_path}")
-                            continue
+                        # Try media TV path
+                        media_tv_path = f'/app/media/tv/{series_name}/{season_name}/{base_name}'
+                        possible_paths.append(media_tv_path)
+                    
+                    # Map 3: Try general locations
+                    possible_paths.append(f'/app/videos/{base_name}')
+                    possible_paths.append(f'/app/videos/{base_name.replace(" ", "_")}')
+                    
+                    # Try each possible path
+                    found_path = None
+                    for path in possible_paths:
+                        logger.info(f"Trying alternative path: {path}")
+                        if os.path.exists(path):
+                            logger.info(f"Found file at path: {path}")
+                            found_path = path
+                            break
+                    
+                    if found_path:
+                        file_path = found_path
                     else:
-                        # Try the original alternative path logic as a fallback
-                        base_name = os.path.basename(file_path)
-                        alternative_path = f"/app/videos/{base_name}"
-                        logger.info(f"Trying alternative path: {alternative_path}")
+                        # If we still can't find it, search recursively
+                        logger.warning("Could not find file at any mapped paths, searching directories...")
+                        search_dirs = ['/app/videos', '/app/CleanVid/TV', '/app/media/tv']
                         
-                        if os.path.exists(alternative_path):
-                            logger.info(f"Found file at alternative path: {alternative_path}")
-                            file_path = alternative_path
-                        else:
-                            logger.warning(f"File not found at alternative path either: {alternative_path}")
-                            continue
+                        if series_name:
+                            # Add more specific search paths if we know the series name
+                            search_dirs.append(f'/app/CleanVid/TV/{series_name}')
+                            search_dirs.append(f'/app/media/tv/{series_name}')
+                        
+                        for search_dir in search_dirs:
+                            if os.path.exists(search_dir) and os.path.isdir(search_dir):
+                                logger.info(f"Searching recursively in: {search_dir}")
+                                for root, dirs, files in os.walk(search_dir):
+                                    if base_name in files:
+                                        found_path = os.path.join(root, base_name)
+                                        logger.info(f"Found file by searching: {found_path}")
+                                        file_path = found_path
+                                        break
+                                if found_path:
+                                    break
+                        
+                        if not found_path:
+                            # Last attempt: Try to clean up the filename and search again
+                            clean_base_name = base_name.replace("'", "").replace(":", "").replace(",", "").replace("&", "and")
+                            if clean_base_name != base_name:
+                                logger.info(f"Searching for cleaned filename: {clean_base_name}")
+                                for search_dir in search_dirs:
+                                    if os.path.exists(search_dir) and os.path.isdir(search_dir):
+                                        for root, dirs, files in os.walk(search_dir):
+                                            for file in files:
+                                                if file.replace("'", "").replace(":", "").replace(",", "").replace("&", "and") == clean_base_name:
+                                                    found_path = os.path.join(root, file)
+                                                    logger.info(f"Found file with similar name: {found_path}")
+                                                    file_path = found_path
+                                                    break
+                                            if found_path:
+                                                break
+                                    if found_path:
+                                        break
+                            
+                            if not found_path:
+                                logger.warning(f"Episode file not found after trying multiple paths, skipping this episode")
+                                continue
 
                 # Create episode info
                 season_num = str(episode.get('seasonNumber', 0)).zfill(2)

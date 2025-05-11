@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import SeasonList from './SeasonList';
 
 function ShowList() {
   const [shows, setShows] = useState([]);
@@ -8,6 +9,7 @@ function ShowList() {
   const [sortField, setSortField] = useState('title');
   const [sortDirection, setSortDirection] = useState('asc');
   const [processing, setProcessing] = useState({});
+  const [selectedShow, setSelectedShow] = useState(null);
 
   // Fetch shows and filtered flags from backend
   useEffect(() => {
@@ -104,6 +106,21 @@ function ShowList() {
       setSortDirection('asc');
     }
   };
+  
+  const handleShowClick = (show) => {
+    setSelectedShow(show);
+  };
+
+  // If a show is selected, show season list
+  if (selectedShow) {
+    return (
+      <SeasonList 
+        showId={selectedShow.id}
+        showTitle={selectedShow.title}
+        onBack={() => setSelectedShow(null)}
+      />
+    );
+  }
 
   return (
     <div className="mt-6">
@@ -161,8 +178,13 @@ function ShowList() {
             {sortedShows.map((show) => (
               <tr key={show.id} className="border-t hover:bg-gray-50">
                 <td className="p-2">
-                  <div className="font-medium">{show.title}</div>
-                  {show.year && <div className="text-sm text-gray-600">{show.year}</div>}
+                  <button 
+                    onClick={() => handleShowClick(show)} 
+                    className="text-blue-600 hover:underline font-medium text-left block"
+                  >
+                    {show.title}
+                    {show.year && <span className="text-sm text-gray-600 ml-2">({show.year})</span>}
+                  </button>
                 </td>
                 <td className="p-2">{show.monitored ? "Yes" : "No"}</td>
                 <td className="p-2">{show.status || "-"}</td>
