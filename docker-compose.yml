@@ -3,14 +3,49 @@ version: '3.8'
 services:
   bleeparr:
     build: .
+    container_name: bleeparr
+    restart: unless-stopped
     ports:
       - "5050:5050"
     volumes:
+      # Mount the local bleeparr CLI script
       - ./bleeparr-1.1.py:/app/bleeparr-1.1.py
+      # Mount the swears file
       - ./swears.txt:/app/swears.txt
+      # Mount a videos directory for processing
       - ./videos:/app/videos
+      # Add a volume for the database
+      - ./data:/app/data
+      # Mount the database directory
+      - ./backend:/app/backend
     environment:
-      - SONARR_URL=http://host.docker.internal:8989
-      - SONARR_API_KEY=your_api_key_here
+      # Sonarr configuration
+      - SONARR_URL=http://10.20.30.60:8989
+      - SONARR_API_KEY=e310542e0d0b474caacb58e941d3cc33
+      # Radarr configuration (optional)
+      - RADARR_URL=http://10.20.30.61:7878
+      - RADARR_API_KEY=975c911830dc45df849dc311a145667f
+      # Web server port
       - UVICORN_PORT=5050
-    restart: unless-stopped
+      # Bleeparr configuration
+      - SWEARS_FILE=/app/swears.txt
+      - OUTPUT_PREFIX=clean_
+      - OUTPUT_DIRECTORY=
+      - ENABLE_AUTO_PROCESSING=1
+      - POLL_INTERVAL_SECONDS=300
+      - BOOST_DB=6
+      - PRE_BUFFER=100
+      - POST_BUFFER=100
+      - BLEEPTOOL=S-M-FSM
+      # Specify the data directory
+      - DATA_DIR=/app/data
+    # Health check to ensure the service is running
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Use the host network to access Sonarr and Radarr more easily
+    # This is useful if Sonarr/Radarr are running on the same host
+    # network_mode: host  # Uncomment if needed
