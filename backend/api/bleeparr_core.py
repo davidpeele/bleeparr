@@ -78,7 +78,7 @@ class Bleeparr:
             # Build command for bleeparr CLI
             cmd = [
                 "python3", 
-                "./bleeparr-1.1.py", 
+                "./bleeparr.py", 
                 "--input", file_path,
                 "--swears", self.swears_file,
                 "--boost-db", str(boost_db),

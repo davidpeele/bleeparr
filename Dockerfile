@@ -2,7 +2,7 @@
 FROM python:3.11-slim AS backend
 WORKDIR /app
 COPY ./backend ./backend
-COPY ./bleeparr-1.1.py ./
+COPY ./bleeparr.py ./
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 

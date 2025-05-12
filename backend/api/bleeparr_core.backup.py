@@ -2,7 +2,7 @@ import subprocess
 import logging
 
 def clean_file(file_path: str, dry_run: bool = False):
-    cmd = ["python3", "bleeparr-1.1.py", "--input", file_path]
+    cmd = ["python3", "bleeparr.py", "--input", file_path]
     if dry_run:
         cmd.append("--dry-run")
     try:

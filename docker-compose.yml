@@ -9,7 +9,7 @@ services:
       - "5050:5050"
     volumes:
       # Mount the local bleeparr CLI script
-      - ./bleeparr-1.1.py:/app/bleeparr-1.1.py
+      - ./bleeparr.py:/app/bleeparr.py
       # Mount the swears file
       - ./swears.txt:/app/swears.txt
       # Mount a videos directory for processing
