@@ -8,7 +8,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger('bleeparr.db')
 
 # Define database path
-DB_PATH = Path(__file__).parent / "bleeparr.db"
+# DB_PATH = Path(__file__).parent / "bleeparr.db"
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+DB_PATH = Path(DATA_DIR) / "bleeparr.db"
 
 def get_db():
     """Get a database connection"""
@@ -16,6 +18,12 @@ def get_db():
 
 def init_db():
     """Initialize the database schema"""
+    # Create data directory if it doesn't exist
+    data_dir = os.path.dirname(DB_PATH)
+    if not os.path.exists(data_dir):
+        logger.info(f"Creating data directory at {data_dir}")
+        os.makedirs(data_dir, exist_ok=True)
+
     logger.info(f"Initializing database at {DB_PATH}")
     with get_db() as conn:
         cursor = conn.cursor()
@@ -112,15 +120,23 @@ def get_setting(key, default=None):
 
 def set_setting(key, value):
     """Set a setting value in the database"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
-            "ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP",
-            (key, value, value)
-        )
-        conn.commit()
-    return True
+    try:
+        logger = logging.getLogger('bleeparr.db')
+        logger.info(f"Setting {key} = {value}")
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP",
+                (key, value, value)
+            )
+            conn.commit()
+            logger.info(f"Successfully updated setting {key} in database")
+        return True
+    except Exception as e:
+        logger = logging.getLogger('bleeparr.db')
+        logger.error(f"Error setting {key} = {value}: {str(e)}", exc_info=True)
+        return False
 
 def get_all_settings():
     """Get all settings as a dictionary"""

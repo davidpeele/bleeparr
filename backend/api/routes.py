@@ -7,7 +7,13 @@ from backend.db import get_db
 from backend.tasks import add_to_queue, get_processing_status
 from typing import List, Dict, Any, Optional
 
+# ?this next line may need to go also:
+#from api.settings_routes import router as settings_router
+from backend.api.settings_routes import router as settings_router
+
+
 router = APIRouter()
+
 
 # Status endpoint
 @router.get("/api/status")
@@ -830,14 +836,6 @@ def process_series(series_id: int, dry_run: bool = Query(False)):
         logger.error(f"Unexpected error while processing series {series_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# Update settings
-@router.post("/api/settings")
-def update_settings(settings: Dict[str, Any]):
-    """Update application settings"""
-    # This would normally update a settings file or database
-    # For now, we'll just return the settings
-    return {
-        "success": True,
-        "message": "Settings updated",
-        "settings": settings
-    }
+
+# Include the routes from settings_router in this router
+router.include_router(settings_router)
