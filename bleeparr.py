@@ -11,6 +11,7 @@ import json
 import re
 import shutil
 import time
+import tempfile
 from faster_whisper import WhisperModel
 from datetime import timedelta
 from collections import defaultdict
@@ -112,7 +113,9 @@ if custom_temp_dir:
         print(f"Error: {e}")
         exit(1)
 else:
-    base_clips_path = os.path.dirname(os.path.abspath(INPUT_VIDEO))
+    # Use a temporary directory to avoid issues with spaces in paths
+    base_clips_path = tempfile.mkdtemp(prefix="bleeparr_")
+    used_custom_temp_dir = True  # We are using a custom temp dir
     used_custom_temp_dir = bool(custom_temp_dir)
 
 
