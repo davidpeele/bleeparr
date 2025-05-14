@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ShowList from './components/ShowList';
 import SettingsPanel from './components/SettingsPanel';
 import Dashboard from './components/Dashboard';
+import AdminPanel from './components/AdminPanel'; // Add this import
 import './index.css';
 
 function App() {
@@ -53,6 +54,19 @@ function App() {
               Settings
             </button>
           </li>
+          {/* Add Admin Tab */}
+          <li className="mr-1">
+            <button
+              className={`py-2 px-4 font-medium ${
+                activeTab === 'admin'
+                  ? 'border-l border-t border-r rounded-t bg-white text-blue-600'
+                  : 'text-gray-500 hover:text-blue-500'
+              }`}
+              onClick={() => setActiveTab('admin')}
+            >
+              Admin
+            </button>
+          </li>
         </ul>
       </nav>
 
@@ -61,6 +75,7 @@ function App() {
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'shows' && <ShowList />}
         {activeTab === 'settings' && <SettingsPanel />}
+        {activeTab === 'admin' && <AdminPanel />} {/* Add this line */}
       </main>
 
       {/* Footer */}

@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from api.routes import router as api_router
+from api.admin_routes import router as admin_router
 from backend.db import init_db
 from tasks import start_polling_loop
+from api.settings_routes import router as settings_router
 import os
 
 app = FastAPI(title="Bleeparr 2.0")
@@ -28,6 +30,7 @@ def read_index():
 
 # Include backend API routes
 app.include_router(api_router)
+app.include_router(settings_router)
 
 # Fallback route to support React Router, excluding API and asset requests
 @app.get("/{full_path:path}")
