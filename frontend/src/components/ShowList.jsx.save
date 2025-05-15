@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import SeasonList from './SeasonList';
-import { useNavigate, Link } from 'react-router-dom';
 
 function ShowList() {
   const [shows, setShows] = useState([]);
@@ -11,7 +10,6 @@ function ShowList() {
   const [sortDirection, setSortDirection] = useState('asc');
   const [processing, setProcessing] = useState({});
   const [selectedShow, setSelectedShow] = useState(null);
-  const navigate = useNavigate();
 
   // Fetch shows and filtered flags from backend
   useEffect(() => {
@@ -109,12 +107,11 @@ function ShowList() {
     }
   };
   
-  const handleShowClick = (seriesId) => {
-    navigate(`/series/${seriesId}`);
+  const handleShowClick = (show) => {
+    setSelectedShow(show);
   };
 
   // If a show is selected, show season list
-  // THIS IF MAY BE REDUNDANT
   if (selectedShow) {
     return (
       <SeasonList 
@@ -125,7 +122,6 @@ function ShowList() {
     );
   }
 
-  // ... modify the show list rendering to make rows clickable ...
   return (
     <div className="mt-6">
       <h2 className="text-xl font-semibold mb-2">TV Shows from Sonarr</h2>
@@ -180,14 +176,19 @@ function ShowList() {
           </thead>
           <tbody>
             {sortedShows.map((show) => (
-              <tr key={show.id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => handleShowClick(show.id)}>
+              <tr key={show.id} className="border-t hover:bg-gray-50">
                 <td className="p-2">
-                  <div className="font-medium text-blue-600 hover:underline">{show.title}</div>
-                  {show.year && <div className="text-sm text-gray-600">{show.year}</div>}
+                  <button 
+                    onClick={() => handleShowClick(show)} 
+                    className="text-blue-600 hover:underline font-medium text-left block"
+                  >
+                    {show.title}
+                    {show.year && <span className="text-sm text-gray-600 ml-2">({show.year})</span>}
+                  </button>
                 </td>
                 <td className="p-2">{show.monitored ? "Yes" : "No"}</td>
                 <td className="p-2">{show.status || "-"}</td>
-                <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                <td className="p-2">
                   <label className="inline-flex items-center">
                     <input
                       type="checkbox"
@@ -198,13 +199,10 @@ function ShowList() {
                     <span className="ml-2">Filter Profanity</span>
                   </label>
                 </td>
-                <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                <td className="p-2">
                   <button
                     className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 disabled:opacity-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleProcessShow(show.id);
-                    }}
+                    onClick={() => handleProcessShow(show.id)}
                     disabled={!show.filtered || processing[show.id]}
                   >
                     {processing[show.id] ? "Processing..." : "Process All Episodes"}
@@ -220,4 +218,6 @@ function ShowList() {
 }
 
 export default ShowList;
+
+clear
 

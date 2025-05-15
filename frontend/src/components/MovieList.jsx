@@ -1,99 +1,97 @@
 import { useState, useEffect } from 'react';
-import SeasonList from './SeasonList';
 import { useNavigate, Link } from 'react-router-dom';
 
-function ShowList() {
-  const [shows, setShows] = useState([]);
+function MovieList() {
+  const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('title');
   const [sortDirection, setSortDirection] = useState('asc');
   const [processing, setProcessing] = useState({});
-  const [selectedShow, setSelectedShow] = useState(null);
   const navigate = useNavigate();
 
-  // Fetch shows and filtered flags from backend
+  // Fetch movies and filtered flags from backend
   useEffect(() => {
     Promise.all([
-      fetch("/api/shows").then((res) => res.json()),
-      fetch("/api/filtered/show").then((res) => res.json())
+      fetch("/api/movies").then((res) => res.json()),
+      fetch("/api/filtered/movie").then((res) => res.json())
     ])
-      .then(([showData, filteredData]) => {
+      .then(([movieData, filteredData]) => {
         const filteredMap = {};
         filteredData.forEach((item) => {
           filteredMap[item.id] = item.filtered;
         });
 
-        const merged = showData.map((show) => ({
-          ...show,
-          filtered: filteredMap[show.id] || false,
+        const merged = movieData.map((movie) => ({
+          ...movie,
+          filtered: filteredMap[movie.id] || false,
         }));
 
-        setShows(merged);
+        setMovies(merged);
         setLoading(false);
       })
       .catch((err) => {
-        console.error("Error loading shows or filtered flags:", err);
-        setError("Failed to load shows.");
+        console.error("Error loading movies or filtered flags:", err);
+        setError("Failed to load movies.");
         setLoading(false);
       });
   }, []);
 
-  // Filter shows based on search term
-  const filteredShows = shows.filter(show => 
-    show.title.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filter movies based on search term
+  const filteredMovies = movies.filter(movie => 
+    movie.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Sort shows based on sort field and direction
-  const sortedShows = [...filteredShows].sort((a, b) => {
+  // Sort movies based on sort field and direction
+  const sortedMovies = [...filteredMovies].sort((a, b) => {
     if (sortField === 'title') {
       return sortDirection === 'asc' 
         ? a.title.localeCompare(b.title)
         : b.title.localeCompare(a.title);
-    } else if (sortField === 'status') {
+    } else if (sortField === 'year') {
       return sortDirection === 'asc'
-        ? (a.status || '').localeCompare(b.status || '')
-        : (b.status || '').localeCompare(a.status || '');
+        ? (a.year || 0) - (b.year || 0)
+        : (b.year || 0) - (a.year || 0);
     }
     return 0;
   });
 
   const handleToggle = (id, newValue) => {
-    fetch(`/api/filtered/show/${id}?filtered=${newValue}`, { method: "PUT" })
+    fetch(`/api/filtered/movie/${id}?filtered=${newValue}`, { method: "PUT" })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to update");
         return res.json();
       })
       .then((data) => {
-        setShows((prev) =>
-          prev.map((show) =>
-            show.id === id ? { ...show, filtered: data.filtered } : show
+        setMovies((prev) =>
+          prev.map((movie) =>
+            movie.id === id ? { ...movie, filtered: data.filtered } : movie
           )
         );
       })
       .catch((err) => console.error("Failed to update filtered flag:", err));
   };
 
-  const handleProcessShow = (id) => {
+  const handleProcessMovie = (id) => {
     setProcessing(prev => ({ ...prev, [id]: true }));
     
-    fetch(`/api/process/series/${id}`, { 
+    fetch(`/api/process/movie/${id}`, { 
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       }
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to process show");
+        if (!res.ok) throw new Error("Failed to process movie");
         return res.json();
       })
       .then((data) => {
-        alert(`Processing ${data.queued_count} episodes from this show.`);
+        alert(`Movie queued for processing: ${data.message}`);
       })
       .catch((err) => {
-        console.error("Failed to process show:", err);
-        alert("Failed to process show. See console for details.");
+        console.error("Failed to process movie:", err);
+        alert("Failed to process movie. See console for details.");
       })
       .finally(() => {
         setProcessing(prev => ({ ...prev, [id]: false }));
@@ -108,45 +106,37 @@ function ShowList() {
       setSortDirection('asc');
     }
   };
-  
-  const handleShowClick = (seriesId) => {
-    navigate(`/series/${seriesId}`);
+
+  const handleMovieClick = (movieId) => {
+    navigate(`/movies/${movieId}`);
   };
 
-  // If a show is selected, show season list
-  // THIS IF MAY BE REDUNDANT
-  if (selectedShow) {
-    return (
-      <SeasonList 
-        showId={selectedShow.id}
-        showTitle={selectedShow.title}
-        onBack={() => setSelectedShow(null)}
-      />
-    );
-  }
-
-  // ... modify the show list rendering to make rows clickable ...
+  // ... modify the movie list rendering to make rows clickable ...
   return (
     <div className="mt-6">
-      <h2 className="text-xl font-semibold mb-2">TV Shows from Sonarr</h2>
+      <h2 className="text-xl font-semibold mb-2">Movies from Radarr</h2>
       
       <div className="mb-4 flex justify-between items-center">
         <input
           type="text"
-          placeholder="Search shows..."
+          placeholder="Search movies..."
           className="px-4 py-2 border rounded-md w-64"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
         <div className="text-sm text-gray-600">
-          {filteredShows.length} of {shows.length} shows
+          {filteredMovies.length} of {movies.length} movies
         </div>
       </div>
       
       {loading ? (
-        <p>Loading shows...</p>
+        <p>Loading movies...</p>
       ) : error ? (
         <p className="text-red-500">{error}</p>
+      ) : movies.length === 0 ? (
+        <div className="bg-yellow-50 p-4 border border-yellow-200 rounded-md">
+          <p className="text-yellow-700">No movies found. Make sure your Radarr integration is configured correctly in the Settings panel.</p>
+        </div>
       ) : (
         <table className="min-w-full border border-gray-200">
           <thead>
@@ -162,38 +152,37 @@ function ShowList() {
                   </span>
                 )}
               </th>
-              <th className="p-2 text-left">Monitored</th>
-              <th className="p-2 text-left">Status</th>
               <th 
                 className="p-2 text-left cursor-pointer"
-                onClick={() => handleSort('status')}
+                onClick={() => handleSort('year')}
               >
-                Filter
-                {sortField === 'status' && (
+                Year
+                {sortField === 'year' && (
                   <span className="ml-1">
                     {sortDirection === 'asc' ? '↑' : '↓'}
                   </span>
                 )}
               </th>
+              <th className="p-2 text-left">Status</th>
+              <th className="p-2 text-left">Filter</th>
               <th className="p-2 text-left">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {sortedShows.map((show) => (
-              <tr key={show.id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => handleShowClick(show.id)}>
+            {sortedMovies.map((movie) => (
+              <tr key={movie.id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => handleMovieClick(movie.id)}>
                 <td className="p-2">
-                  <div className="font-medium text-blue-600 hover:underline">{show.title}</div>
-                  {show.year && <div className="text-sm text-gray-600">{show.year}</div>}
+                  <div className="font-medium text-blue-600 hover:underline">{movie.title}</div>
                 </td>
-                <td className="p-2">{show.monitored ? "Yes" : "No"}</td>
-                <td className="p-2">{show.status || "-"}</td>
+                <td className="p-2">{movie.year || "-"}</td>
+                <td className="p-2">{movie.status || "-"}</td>
                 <td className="p-2" onClick={(e) => e.stopPropagation()}>
                   <label className="inline-flex items-center">
                     <input
                       type="checkbox"
                       className="form-checkbox h-5 w-5 text-blue-600"
-                      checked={show.filtered}
-                      onChange={() => handleToggle(show.id, !show.filtered)}
+                      checked={movie.filtered}
+                      onChange={() => handleToggle(movie.id, !movie.filtered)}
                     />
                     <span className="ml-2">Filter Profanity</span>
                   </label>
@@ -203,11 +192,11 @@ function ShowList() {
                     className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 disabled:opacity-50"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleProcessShow(show.id);
+                      handleProcessMovie(movie.id);
                     }}
-                    disabled={!show.filtered || processing[show.id]}
+                    disabled={!movie.filtered || processing[movie.id]}
                   >
-                    {processing[show.id] ? "Processing..." : "Process All Episodes"}
+                    {processing[movie.id] ? "Processing..." : "Process Movie"}
                   </button>
                 </td>
               </tr>
@@ -219,5 +208,4 @@ function ShowList() {
   );
 }
 
-export default ShowList;
-
+export default MovieList;

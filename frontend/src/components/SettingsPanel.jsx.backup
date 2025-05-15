@@ -36,18 +36,38 @@ function SettingsPanel() {
     fetchSettings();
     fetchConnectionStatus();
   }, []);
-    
-
+  
   const fetchSettings = async () => {
     try {
-      console.log("Fetching settings from server");
-      const response = await fetch('/api/settings');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      console.log("Settings received:", data);
-    
+      // Normally would fetch from server, but using simulated data for now
+      // const response = await fetch('/api/settings');
+      // const data = await response.json();
+      
+      // Simulated delay for demo
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Simulated settings from server
+      const data = {
+        sonarr_url: 'http://localhost:8989',
+        sonarr_api_key: 'abc123456789',
+        radarr_url: 'http://localhost:7878',
+        radarr_api_key: '',
+        swears_file: 'swears.txt',
+        output_prefix: 'clean_',
+        output_directory: '',
+        enable_auto_processing: true,
+        poll_interval_seconds: 300,
+        boost_db: 6,
+        pre_buffer: 100,
+        post_buffer: 100,
+        bleeptool: 'S-M-FSM',
+        // New options from bleeparr.py v1.2
+        use_beep: false,
+        beep_mode: 'words',
+        temp_dir: '',
+        retain_clips: false
+      };
+      
       setSettings(data);
       setLoading(false);
     } catch (error) {
@@ -55,7 +75,7 @@ function SettingsPanel() {
       setLoading(false);
     }
   };
-
+  
   const fetchConnectionStatus = async () => {
     try {
       const sonarrResponse = await fetch('/api/sonarr/test');
@@ -96,27 +116,22 @@ function SettingsPanel() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-  
-    console.log("Submitting settings:", settings);
-  
+    
     try {
-      const response = await fetch('/api/settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(settings)
-      });
-    
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    
-      const result = await response.json();
-      console.log("Settings saved response:", result);
-    
+      // Normally would save to server
+      // await fetch('/api/settings', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json'
+      //   },
+      //   body: JSON.stringify(settings)
+      // });
+      
+      // Simulated save delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       alert('Settings saved successfully!');
-    
+      
       // Refresh connection status with new settings
       await fetchConnectionStatus();
     } catch (error) {
