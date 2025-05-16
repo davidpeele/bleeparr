@@ -6,11 +6,8 @@ logger = logging.getLogger('bleeparr.routes')
 from backend.db import get_db
 from backend.tasks import add_to_queue, get_processing_status
 from typing import List, Dict, Any, Optional
-
-# ?this next line may need to go also:
-#from api.settings_routes import router as settings_router
 from backend.api.settings_routes import router as settings_router
-
+from backend.api.path_mapping import map_path, find_file_with_fallbacks
 
 router = APIRouter()
 
@@ -329,13 +326,12 @@ def process_episode(episode_id: int, background_tasks: BackgroundTasks, dry_run:
         if not file_path:
             raise HTTPException(status_code=404, detail="Episode file path not found")
 
-        # Check if file exists and try path mapping if needed
-        if not os.path.exists(file_path):
-            logger.warning(f"File does not exist at path: {file_path}")
-            
-            # Try various path mappings
-            possible_paths = []
-            base_name = os.path.basename(file_path)
+        # Check if file exists and try path mapping
+        mapped_path = find_file_with_fallbacks(file_path)
+        if mapped_path:
+            file_path = mapped_path
+        else:
+            raise HTTPException(status_code=404, detail=f"File not found after trying multiple paths. Original path: {file_path}")
             
             # Extract series and season info for better path mapping
             parts = file_path.split('/')
@@ -495,13 +491,14 @@ def process_movie(movie_id: int, background_tasks: BackgroundTasks, dry_run: boo
         if not file_path:
             raise HTTPException(status_code=404, detail="Movie file path not found")
 
-        # Check if file exists and try path mapping if needed
-        if not os.path.exists(file_path):
-            logger.warning(f"File does not exist at path: {file_path}")
-            
-            # Try various path mappings
-            possible_paths = []
-            base_name = os.path.basename(file_path)
+
+
+        # Check if file exists and try path mapping
+        mapped_path = find_file_with_fallbacks(file_path)
+        if mapped_path:
+            file_path = mapped_path
+        else:
+            raise HTTPException(status_code=404, detail=f"File not found after trying multiple paths. Original path: {file_path}")
             
             # Extract movie title for better path mapping
             movie_title = movie.get('title')
@@ -696,14 +693,14 @@ def process_series(series_id: int, dry_run: bool = Query(False)):
                     logger.warning(f"No file path found for episode file ID: {episode_file_id}")
                     continue
                 
-                # Verify file exists
-                if not os.path.exists(file_path):
-                    logger.warning(f"File does not exist at path: {file_path}")
-                    
-                    # Try various path mappings
-                    possible_paths = []
-                    base_name = os.path.basename(file_path)
-                    
+                # Check if file exists and try path mapping
+                mapped_path = find_file_with_fallbacks(file_path)
+                if mapped_path:
+                    file_path = mapped_path
+                else:
+                    logger.warning(f"Episode file not found after trying multiple paths, skipping this episode")
+                    continue
+                                    
                     # Extract series and season info for better path mapping
                     parts = file_path.split('/')
                     series_name = None
@@ -836,6 +833,34 @@ def process_series(series_id: int, dry_run: bool = Query(False)):
         logger.error(f"Unexpected error while processing series {series_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+# Admin endpoints
+@router.post("/api/admin/clear-queue")
+def clear_queue():
+    """Clear the processing queue (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM processing_queue")
+        conn.commit()
+        logger.info("Processing queue cleared by admin")
+        return {"success": True, "message": "Processing queue cleared"}
+    except Exception as e:
+        logger.error(f"Error clearing queue: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/admin/clear-history")
+def clear_history():
+    """Clear the processing history (admin only)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM processing_history")
+        conn.commit()
+        logger.info("Processing history cleared by admin")
+        return {"success": True, "message": "Processing history cleared"}
+    except Exception as e:
+        logger.error(f"Error clearing history: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Include the routes from settings_router in this router
 router.include_router(settings_router)

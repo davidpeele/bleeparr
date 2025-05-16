@@ -20,6 +20,10 @@ function SettingsPanel() {
     beep_mode: 'words',
     temp_dir: '',
     retain_clips: false
+    // Path mapping settings
+    path_mappings: [
+      { host_path: '', container_path: '' }
+    ],
   });
   
   const [loading, setLoading] = useState(true);
@@ -36,7 +40,42 @@ function SettingsPanel() {
     fetchSettings();
     fetchConnectionStatus();
   }, []);
-    
+  
+  // Function to handle path mapping changes
+  const handlePathMappingChange = (index, field, value) => {
+    setSettings(prev => {
+      const newMappings = [...prev.path_mappings];
+      newMappings[index] = {
+        ...newMappings[index],
+        [field]: value
+      };
+      return {
+        ...prev,
+        path_mappings: newMappings
+      };
+    });
+  };    
+
+  const addPathMapping = () => {
+    setSettings(prev => ({
+      ...prev,
+      path_mappings: [...prev.path_mappings, { host_path: '', container_path: '' }]
+    }));
+  };
+  
+  const removePathMapping = (index) => {
+    setSettings(prev => {
+      const newMappings = [...prev.path_mappings];
+      newMappings.splice(index, 1);
+      if (newMappings.length === 0) {
+        newMappings.push({ host_path: '', container_path: '' });
+      }
+      return {
+        ...prev,
+        path_mappings: newMappings
+      };
+    });
+  };
 
   const fetchSettings = async () => {
     try {
@@ -47,15 +86,34 @@ function SettingsPanel() {
       }
       const data = await response.json();
       console.log("Settings received:", data);
-    
-      setSettings(data);
+      
+      // Process path mappings
+      let pathMappings = [];
+      try {
+        // Parse path_mappings if it exists
+        if (data.path_mappings) {
+          pathMappings = JSON.parse(data.path_mappings);
+        }
+      } catch (e) {
+        console.error("Error parsing path mappings:", e);
+      }
+      
+      // Ensure at least one empty mapping
+      if (!pathMappings || pathMappings.length === 0) {
+        pathMappings = [{ host_path: '', container_path: '' }];
+      }
+      
+      setSettings({
+        ...data,
+        path_mappings: pathMappings
+      });
       setLoading(false);
     } catch (error) {
       console.error('Error fetching settings:', error);
       setLoading(false);
     }
   };
-
+  
   const fetchConnectionStatus = async () => {
     try {
       const sonarrResponse = await fetch('/api/sonarr/test');
@@ -97,7 +155,19 @@ function SettingsPanel() {
     e.preventDefault();
     setSaving(true);
   
-    console.log("Submitting settings:", settings);
+    // Create a copy of settings to modify
+    const settingsToSubmit = { ...settings };
+    
+    // Serialize path mappings to JSON string
+    if (settingsToSubmit.path_mappings) {
+      // Filter out empty mappings
+      const validMappings = settingsToSubmit.path_mappings.filter(
+        m => m.host_path.trim() && m.container_path.trim()
+      );
+      settingsToSubmit.path_mappings = JSON.stringify(validMappings);
+    }
+  
+    console.log("Submitting settings:", settingsToSubmit);
   
     try {
       const response = await fetch('/api/settings', {
@@ -105,7 +175,7 @@ function SettingsPanel() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(settingsToSubmit)
       });
     
       if (!response.ok) {
@@ -528,6 +598,75 @@ function SettingsPanel() {
                 <p className="text-sm text-gray-500 mt-1">How often to check for new downloads (60-3600 sec)</p>
               </div>
             </div>
+          </div>
+        </div>
+        
+        {/* Path Mapping Settings */}
+        <div className="bg-white p-4 border rounded-lg">
+          <h3 className="text-lg font-medium mb-3">Path Mapping</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Configure path mappings between your host system and the Docker container.
+            These mappings are used to translate file paths from Sonarr/Radarr to paths accessible within the container.
+          </p>
+          
+          {settings.path_mappings.map((mapping, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-8 gap-2 mb-2 items-center">
+              <div className="md:col-span-3">
+                <input
+                  type="text"
+                  placeholder="Host path (e.g., /mnt/storagepool/TV)"
+                  value={mapping.host_path}
+                  onChange={(e) => handlePathMappingChange(index, 'host_path', e.target.value)}
+                  className="w-full border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="text-center md:col-span-1">
+                <span className="text-gray-500">→</span>
+              </div>
+              <div className="md:col-span-3">
+                <input
+                  type="text"
+                  placeholder="Container path (e.g., /app/media/tv)"
+                  value={mapping.container_path}
+                  onChange={(e) => handlePathMappingChange(index, 'container_path', e.target.value)}
+                  className="w-full border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="md:col-span-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => removePathMapping(index)}
+                  className="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
+                  title="Remove mapping"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+          
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={addPathMapping}
+              className="flex items-center px-3 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+              </svg>
+              Add Mapping
+            </button>
+          </div>
+          
+          <div className="mt-3 text-sm">
+            <p className="text-gray-600">
+              <strong>Example:</strong> If Sonarr reports paths like <code>/mnt/storagepool/TV/ShowName</code> but your container 
+              mounts that directory at <code>/app/media/tv/ShowName</code>, add the mapping:
+              <br />
+              Host: <code>/mnt/storagepool/TV</code> → Container: <code>/app/media/tv</code>
+            </p>
           </div>
         </div>
         
