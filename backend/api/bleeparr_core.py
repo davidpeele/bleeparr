@@ -11,7 +11,8 @@ logger = logging.getLogger('bleeparr.core')
 class Bleeparr:
     """Class to handle profanity cleaning operations"""
     
-    def __init__(self, swears_file='swears.txt', output_prefix='clean_', output_directory=''):
+    def __init__(self, swears_file='swears.txt', output_prefix='clean_', output_directory='', 
+                 temp_dir='', retain_clips=False, use_beep=False, beep_mode='words'):
         """
         Initialize Bleeparr processor
         
@@ -19,10 +20,18 @@ class Bleeparr:
             swears_file: Path to the file containing profanity words
             output_prefix: Prefix to add to cleaned files
             output_directory: Directory to save cleaned files (if empty, same as input)
+            temp_dir: Directory to store temporary clips (if empty, uses default)
+            retain_clips: Whether to retain clips folder after processing
+            use_beep: Use beep tone instead of muting
+            beep_mode: Beep mode (words, segments, or both)
         """
         self.swears_file = swears_file
         self.output_prefix = output_prefix
         self.output_directory = output_directory
+        self.temp_dir = temp_dir
+        self.retain_clips = retain_clips
+        self.use_beep = use_beep
+        self.beep_mode = beep_mode
         
         # Validate swears file exists
         if not os.path.exists(self.swears_file):
@@ -87,20 +96,29 @@ class Bleeparr:
                 "--bleeptool", bleeptool
             ]
             
+            # Add new options from v1.2
+            if self.use_beep:
+                cmd.append("--beep")
+                if self.beep_mode:
+                    cmd.extend(["--beep-mode", self.beep_mode])
+            
+            if self.temp_dir:
+                cmd.extend(["--temp-dir", self.temp_dir])
+                
+            if self.retain_clips:
+                cmd.append("--retain-clips")
+            
             if dry_run:
                 cmd.append("--dry-run")
                 logger.info(f"Dry run on: {file_path}")
-            else:
-                # Add output related options
-                if output_dir != file_dir:
-                    # Handle custom output directory
-                    # The CLI doesn't support direct output dir specification,
-                    # so we'll need to move the file after processing
-                    pass
             
             # Run the command
             logger.info(f"Running command: {' '.join(cmd)}")
             process = subprocess.run(cmd, capture_output=True, text=True)
+
+            # Log the complete stdout and stderr
+            logger.info(f"Command stdout: {process.stdout}")
+            logger.info(f"Command stderr: {process.stderr}")
             
             if process.returncode != 0:
                 logger.error(f"Bleeparr CLI process failed: {process.stderr}")
@@ -114,11 +132,24 @@ class Bleeparr:
             # Parse output to get stats
             output = process.stdout
             swears_found = 0
-            # Look for lines with "Muting X Bad Words"
+            # Look for lines with "Mute Summary" section
+            found_summary = False
             for line in output.splitlines():
-                if "Total Words Muted" in line:
+                if "📋 Mute Summary:" in line:
+                    found_summary = True
+                    continue
+                    
+                if found_summary and "Total Words Muted" in line:
                     try:
                         swears_found = int(line.split(":")[-1].strip())
+                    except:
+                        pass
+                elif found_summary and line.startswith("🔹"):
+                    # Parse each mute count line
+                    try:
+                        count_str = line.split()[0]
+                        count = int(count_str.strip("🔹 "))
+                        swears_found += count
                     except:
                         pass
             
@@ -139,7 +170,9 @@ class Bleeparr:
             }
 
 # Standalone functions for compatibility with existing code
-def process_media_file(file_path, media_type, title, output_prefix='clean_', dry_run=False):
+def process_media_file(file_path, media_type, title, output_prefix='clean_', dry_run=False,
+                       temp_dir='', retain_clips=False, use_beep=False, beep_mode='words', 
+                       boost_db=6, pre_buffer=100, post_buffer=100, bleeptool="S-M-FSM"):
     """
     Process a media file to censor profanity
     
@@ -149,15 +182,36 @@ def process_media_file(file_path, media_type, title, output_prefix='clean_', dry
         title: Title of the media
         output_prefix: Prefix for the output file name
         dry_run: If True, will not actually make changes
+        temp_dir: Directory to store temporary clips
+        retain_clips: Whether to retain clips folder after processing
+        use_beep: Use beep tone instead of muting
+        beep_mode: Beep mode (words, segments, or both)
+        boost_db: Audio boost level in dB for improved detection
+        pre_buffer: Pre-mute buffer in milliseconds
+        post_buffer: Post-mute buffer in milliseconds
+        bleeptool: Passes to run (S-M-FSM, S-FSM, S-M, S)
         
     Returns:
         Dictionary with processing results
     """
-    # Create a temporary Bleeparr instance
-    bleeper = Bleeparr(output_prefix=output_prefix)
+    # Create a temporary Bleeparr instance with the provided settings
+    bleeper = Bleeparr(
+        output_prefix=output_prefix,
+        temp_dir=temp_dir,
+        retain_clips=retain_clips,
+        use_beep=use_beep,
+        beep_mode=beep_mode
+    )
     
     # Process the file
-    result = bleeper.process_file(file_path, dry_run=dry_run)
+    result = bleeper.process_file(
+        file_path, 
+        dry_run=dry_run,
+        boost_db=boost_db,
+        pre_buffer=pre_buffer,
+        post_buffer=post_buffer,
+        bleeptool=bleeptool
+    )
     
     # Add additional info
     result['media_type'] = media_type
@@ -165,14 +219,26 @@ def process_media_file(file_path, media_type, title, output_prefix='clean_', dry
     
     return result
 
-def process_episode(episode_path, series_title, episode_info, output_prefix='clean_', dry_run=False):
+def process_episode(episode_path, series_title, episode_info, output_prefix='clean_', dry_run=False,
+                   temp_dir='', retain_clips=False, use_beep=False, beep_mode='words',
+                   boost_db=6, pre_buffer=100, post_buffer=100, bleeptool="S-M-FSM"):
     """Process a TV episode file"""
     title = f"{series_title} - {episode_info}"
-    return process_media_file(episode_path, 'show', title, output_prefix, dry_run)
+    return process_media_file(
+        episode_path, 'show', title, output_prefix, dry_run,
+        temp_dir, retain_clips, use_beep, beep_mode,
+        boost_db, pre_buffer, post_buffer, bleeptool
+    )
 
-def process_movie(movie_path, movie_title, output_prefix='clean_', dry_run=False):
+def process_movie(movie_path, movie_title, output_prefix='clean_', dry_run=False,
+                 temp_dir='', retain_clips=False, use_beep=False, beep_mode='words',
+                 boost_db=6, pre_buffer=100, post_buffer=100, bleeptool="S-M-FSM"):
     """Process a movie file"""
-    return process_media_file(movie_path, 'movie', movie_title, output_prefix, dry_run)
+    return process_media_file(
+        movie_path, 'movie', movie_title, output_prefix, dry_run,
+        temp_dir, retain_clips, use_beep, beep_mode,
+        boost_db, pre_buffer, post_buffer, bleeptool
+    )
 
 def clean_file(file_path, dry_run=False):
     """Legacy function for backward compatibility"""

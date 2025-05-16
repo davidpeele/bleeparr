@@ -1,3 +1,4 @@
+ffmpeg
 fastapi
 uvicorn
 sqlalchemy
@@ -6,3 +7,7 @@ python-dotenv
 aiofiles
 pydantic
 asyncio
+srt
+faster-whisper
+subliminal
+babelfish

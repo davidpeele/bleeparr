@@ -21,8 +21,11 @@ services:
       # Mount the TV shows directory
       - /mnt/storagepool/TV:/app/media/tv
       # Mount the directory CleanVid 
-      - /mnt/storagepool/CleanVid:/app/CleanVid
-
+      - /mnt/storagepool/CleanVid/TV:/app/CleanVid/tv
+      # Mount the Movies directory
+      - /mnt/storagepool/Movies:/app/media/movies
+      # Mount the directory CleanVid 
+      - /mnt/storagepool/CleanVid/Movies:/app/CleanVid/movies
 
     environment:
       # Sonarr configuration

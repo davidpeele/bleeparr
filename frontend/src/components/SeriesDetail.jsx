@@ -27,23 +27,66 @@ function SeriesDetail() {
       const seriesData = await seriesResponse.json();
       setSeries(seriesData);
       
-      // Get seasons data
-      const seasonsData = [];
-      const seasonNumbers = [...new Set(seriesData.seasons.map(s => s.seasonNumber))].sort((a, b) => a - b);
+      console.log('Series data structure:', seriesData); // Log for debugging
       
-      // Create seasons array
-      seasonNumbers.forEach(seasonNumber => {
-        // Skip season 0 (specials) if you want
-        if (seasonNumber > 0) {
-          seasonsData.push({
-            seasonNumber,
-            name: `Season ${seasonNumber}`,
-            episodeCount: seriesData.seasons.filter(s => s.seasonNumber === seasonNumber).length
-          });
+      let seasonData = [];
+      
+      // Depending on the API response format:
+      if (seriesData.seasons) {
+        // Option 1: seriesData.seasons contains season objects with episodeCount
+        if (seriesData.seasons.length > 0 && 'statistics' in seriesData.seasons[0]) {
+          seasonData = seriesData.seasons
+            .filter(season => season.seasonNumber > 0) // Skip specials
+            .map(season => ({
+              seasonNumber: season.seasonNumber,
+              name: `Season ${season.seasonNumber}`,
+              episodeCount: season.statistics?.episodeCount || season.statistics?.totalEpisodeCount || 0
+            }))
+            .sort((a, b) => a.seasonNumber - b.seasonNumber);
+        } 
+        // Option 2: seriesData.seasons contains episode objects grouped by seasonNumber
+        else {
+          const seasonNumbers = [...new Set(seriesData.seasons.map(s => s.seasonNumber))].sort((a, b) => a - b);
+          
+          seasonData = seasonNumbers
+            .filter(num => num > 0) // Skip specials (season 0)
+            .map(seasonNumber => {
+              const episodesInSeason = seriesData.seasons.filter(s => s.seasonNumber === seasonNumber);
+              return {
+                seasonNumber,
+                name: `Season ${seasonNumber}`,
+                episodeCount: episodesInSeason.length
+              };
+            });
         }
-      });
+      }
+      // Option 3: We need to fetch episodes separately
+      else if (seriesData.id) {
+        // Fetch episodes
+        const episodesResponse = await fetch(`/api/shows/${seriesId}/episodes`);
+        if (episodesResponse.ok) {
+          const episodes = await episodesResponse.json();
+          // Group by season
+          const seasonMap = {};
+          episodes.forEach(ep => {
+            if (ep.seasonNumber > 0) { // Skip specials
+              if (!seasonMap[ep.seasonNumber]) {
+                seasonMap[ep.seasonNumber] = [];
+              }
+              seasonMap[ep.seasonNumber].push(ep);
+            }
+          });
+          
+          // Create seasons array
+          seasonData = Object.keys(seasonMap).map(seasonNumber => ({
+            seasonNumber: parseInt(seasonNumber, 10),
+            name: `Season ${seasonNumber}`,
+            episodeCount: seasonMap[seasonNumber].length
+          })).sort((a, b) => a.seasonNumber - b.seasonNumber);
+        }
+      }
       
-      setSeasons(seasonsData);
+      setSeasons(seasonData);
       setError(null);
     } catch (err) {
       console.error('Error fetching series details:', err);
@@ -52,7 +95,7 @@ function SeriesDetail() {
       setLoading(false);
     }
   };
-  
+    
   const handleBack = () => {
     navigate('/shows');
   };

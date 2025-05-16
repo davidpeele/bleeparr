@@ -4,10 +4,11 @@ import time
 import logging
 import os
 from datetime import datetime, timedelta
-from backend.db import add_to_processing_queue, get_processing_queue, remove_from_processing_queue, is_in_queue_or_history, save_processing_history, get_processing_history
+from backend.db import get_db, add_to_processing_queue, get_processing_queue, remove_from_processing_queue, is_in_queue_or_history, save_processing_history, get_processing_history
 from api.sonarr import SonarrAPI
 from api.radarr import RadarrAPI
 from api.bleeparr_core import process_episode, process_movie
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -219,6 +220,7 @@ def is_item_already_processed(item):
     
     return False
 
+
 async def process_queue():
     """Process items in the queue"""
     queue_items = get_processing_queue()
@@ -229,6 +231,22 @@ async def process_queue():
     
     logger.info(f"Processing queue with {len(queue_items)} items")
     
+    # Get settings for processing
+    from backend.db import get_all_settings
+    settings = get_all_settings()
+    
+    # Convert settings to appropriate types
+    boost_db = int(settings.get('boost_db', 6))
+    pre_buffer = int(settings.get('pre_buffer', 100))
+    post_buffer = int(settings.get('post_buffer', 100))
+    bleeptool = settings.get('bleeptool', 'S-M-FSM')
+    use_beep = settings.get('use_beep', '0') == '1'
+    beep_mode = settings.get('beep_mode', 'words')
+    temp_dir = settings.get('temp_dir', '')
+    retain_clips = settings.get('retain_clips', '0') == '1'
+    output_prefix = settings.get('output_prefix', 'clean_')
+    output_directory = settings.get('output_directory', '')
+    
     for item in queue_items:
         try:
             logger.info(f"Processing {item['item_type']}: {item['title']} - {item['detail']}")
@@ -236,14 +254,34 @@ async def process_queue():
             result = None
             if item['item_type'] == 'show':
                 result = process_episode(
-                    item['file_path'],
-                    item['title'],
-                    item['detail']
+                    episode_path=item['file_path'],
+                    series_title=item['title'],
+                    episode_info=item['detail'],
+                    output_prefix=output_prefix,
+                    dry_run=False,
+                    temp_dir=temp_dir,
+                    retain_clips=retain_clips,
+                    use_beep=use_beep,
+                    beep_mode=beep_mode,
+                    boost_db=boost_db,
+                    pre_buffer=pre_buffer,
+                    post_buffer=post_buffer,
+                    bleeptool=bleeptool
                 )
             elif item['item_type'] == 'movie':
                 result = process_movie(
-                    item['file_path'],
-                    item['title']
+                    movie_path=item['file_path'],
+                    movie_title=item['title'],
+                    output_prefix=output_prefix,
+                    dry_run=False,
+                    temp_dir=temp_dir,
+                    retain_clips=retain_clips,
+                    use_beep=use_beep,
+                    beep_mode=beep_mode,
+                    boost_db=boost_db,
+                    pre_buffer=pre_buffer,
+                    post_buffer=post_buffer,
+                    bleeptool=bleeptool
                 )
             
             # Add to history and remove from queue

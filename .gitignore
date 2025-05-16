@@ -27,3 +27,16 @@ swears.txt
 *.pid
 *.sock
 *.tar
+
+# macOS files
+.DS_Store
+._*
+
+# Backup files
+*.backup
+*.bak
+*.backup.*
+*.py.backup
+
+# Test data
+videos/

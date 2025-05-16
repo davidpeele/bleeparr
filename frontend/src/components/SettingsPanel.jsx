@@ -19,11 +19,11 @@ function SettingsPanel() {
     use_beep: false,
     beep_mode: 'words',
     temp_dir: '',
-    retain_clips: false
+    retain_clips: false,
     // Path mapping settings
     path_mappings: [
       { host_path: '', container_path: '' }
-    ],
+    ]
   });
   
   const [loading, setLoading] = useState(true);
