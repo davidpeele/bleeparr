@@ -133,6 +133,21 @@ def subtitle_text(sub):
     return re.sub(r'<[^>]+>|\{[^}]+\}', ' ', sub.content)
 
 
+def masked_dialogue(text, swears):
+    """Mask configured words and phrases using the processing match rules."""
+    spans = list(re.finditer(r"\w+(?:['’]\w+)*", text))
+    merged = []
+    for start, end in sorted({(spans[first].start(), spans[after - 1].end())
+                             for _, first, after in phrase_matches(tokens(text), swears)}):
+        if merged and start < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    for start, end in reversed(merged):
+        text = text[:start] + '****' + text[end:]
+    return ' '.join(text.split())
+
+
 def matching_sections(subtitles, swears, duration):
     sections = []
     for sub in subtitles:
@@ -140,6 +155,7 @@ def matching_sections(subtitles, swears, duration):
         expected = Counter(entry for entry, _, _ in matches)
         if expected:
             sections.append(dict(start=sub.start.total_seconds(), end=min(sub.end.total_seconds(), duration), expected=expected,
+                                 dialogue=masked_dialogue(subtitle_text(sub), swears),
                                  matched_word_count=len({i for _, first, after in matches for i in range(first, after)})))
     return sections
 

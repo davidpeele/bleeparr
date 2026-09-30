@@ -69,6 +69,12 @@ def muting(args, hits, sections, duration, subtitle, swears, source_signature):
                   fallback_percent=round(share * 100, 2), muted_seconds=round(seconds, 2),
                   muted_percent=round(seconds / duration * 100, 2), longest_fallback_seconds=round(longest, 2))
     report['fallback_intervals'] = [[hit['start'],hit['end']] for hit in fallback]
+    report['fallback_dialogue'] = [dict(start=hit['start'], end=hit['end'],
+        dialogue=' '.join(section.get('dialogue', '') for section in sections
+                          if section['start'] == hit['start'] and section['end'] == hit['end']))
+        for hit in fallback]
+    for cue in report['fallback_dialogue']:
+        print(f"Whole-subtitle mute: {cue['start']:.2f}–{cue['end']:.2f}s | {cue['dialogue'] or 'Dialogue unavailable'}", flush=True)
     report['mute_intervals'] = ranges
     reasons = []
     if len(fallback) >= 3 and share * 100 > args.max_fallback_percent:

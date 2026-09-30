@@ -161,3 +161,29 @@ def test_new_settings_validated_and_retention_off_by_default(client):
     assert config['retain_originals'] is False and config['check_subtitle_timing'] and config['review_broad_muting']
     for settings in [{'max_muted_percent':101},{'max_fallback_seconds':0},{'original_storage_gb':0},{'original_retention_days':91}]:
         assert client.put('/api/settings',json=settings).status_code==422
+
+
+@pytest.mark.parametrize('text,rules,expected',[
+    ('Damn, that damn damning thing!', {'damn'}, '****, that **** damning thing!'),
+    ('You son of a bitch!', {'son of a bitch'}, 'You ****!'),
+    ('That’s bloody hell.', {'bloody', 'bloody hell'}, 'That’s ****.'),
+    ("Don't do it. DON’T!", {"don't"}, '**** do it. ****!'),
+])
+def test_mute_dialogue_masks_complete_words_and_overlapping_phrases(text,rules,expected):
+    assert cli.masked_dialogue(text,rules)==expected
+
+
+def test_review_and_log_include_masked_subtitle_dialogue(tmp_path,capsys):
+    args,source,subs,_,_=muting_setup(tmp_path)
+    subtitles=[SimpleNamespace(start=timedelta(seconds=i*10), end=timedelta(seconds=i*10+2),
+                               content='<i>Damn!</i> Where are you?') for i in range(4)]
+    sections=cli.matching_sections(subtitles,{'damn'},600)
+    hits=[dict(start=s['start'],end=s['end'],fallback=True) for s in sections]
+    with pytest.raises(quality.QualityReview) as caught:
+        quality.muting(args,hits,sections,600,subs,{'damn'},output.signature(source))
+    cues=caught.value.details['muting_review']['fallback_dialogue']
+    assert len(cues)==4
+    assert cues[0]==dict(start=0,end=2,dialogue='****! Where are you?')
+    log=capsys.readouterr().out
+    assert '0.00–2.00s | ****! Where are you?' in log
+    assert 'Damn' not in log
