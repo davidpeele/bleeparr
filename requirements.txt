@@ -1,0 +1,12 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+requests>=2.32,<3
+srt==3.5.3
+langid==1.1.6
+# Keep the decoder API compatible with this speech engine (PyAV 19 removed metadata_errors).
+faster-whisper==1.2.1
+av==18.1.0
+ctranslate2==4.8.2
+subliminal>=2.2,<3
+babelfish>=0.6,<1
+PlexAPI>=4.17,<5
