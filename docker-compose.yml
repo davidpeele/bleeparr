@@ -1,0 +1,16 @@
+
+services:
+  bleeparr:
+    build: .
+    network_mode: host
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./bleeparr-1.1.py:/app/bleeparr-1.1.py
+      - ./swears.txt:/app/swears.txt
+      - ./videos:/app/videos
+    environment:
+      - SONARR_URL=http://192.0.2.10:8989
+      - SONARR_API_KEY=
+      - UVICORN_PORT=5050
+    restart: unless-stopped
