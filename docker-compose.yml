@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  bleeparr:
+    build: .
+    container_name: bleeparr
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    volumes:
+      # Mount the local bleeparr CLI script
+      - ./bleeparr.py:/app/bleeparr.py
+      # Mount the swears file
+      - ./swears.txt:/app/swears.txt
+      # Mount a videos directory for processing
+      - ./videos:/app/videos
+      # Add a volume for the database
+      - ./data:/app/data
+      # Mount the database directory
+      - ./backend:/app/backend
+      # Mount the TV shows directory
+      - /srv/media/TV:/app/media/tv
+      # Mount the directory CleanVid 
+      - /srv/media/selected/TV:/app/CleanVid/tv
+      # Mount the Movies directory
+      - /srv/media/Movies:/app/media/movies
+      # Mount the directory CleanVid 
+      - /srv/media/selected/Movies:/app/CleanVid/movies
+
+    environment:
+      # Sonarr configuration
+      - SONARR_URL=http://192.0.2.10:8989
+      - SONARR_API_KEY=
+      # Radarr configuration (optional)
+      - RADARR_URL=http://192.0.2.10:7878
+      - RADARR_API_KEY=
+      # Web server port
+      - UVICORN_PORT=5050
+      # Bleeparr configuration
+      - SWEARS_FILE=/app/swears.txt
+      - OUTPUT_PREFIX=clean_
+      - OUTPUT_DIRECTORY=
+      - ENABLE_AUTO_PROCESSING=1
+      - POLL_INTERVAL_SECONDS=300
+      - BOOST_DB=6
+      - PRE_BUFFER=100
+      - POST_BUFFER=100
+      - BLEEPTOOL=S-M-FSM
+      # Specify the data directory
+      - DATA_DIR=/app/data
+    # Health check to ensure the service is running
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Use the host network to access Sonarr and Radarr more easily
+    # This is useful if Sonarr/Radarr are running on the same host
+    # network_mode: host  # Uncomment if needed

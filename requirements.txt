@@ -1,0 +1,13 @@
+ffmpeg
+fastapi
+uvicorn
+sqlalchemy
+requests
+python-dotenv
+aiofiles
+pydantic
+asyncio
+srt
+faster-whisper
+subliminal
+babelfish
