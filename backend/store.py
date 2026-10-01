@@ -9,7 +9,7 @@ from contextlib import contextmanager
 DEFAULTS = dict(sonarr_url='', sonarr_api_key='', radarr_url='', radarr_api_key='',
                 sonarr_path_from='', sonarr_path_to='', radarr_path_from='', radarr_path_to='',
                 cleanvid_enabled=False, cleanvid_roots='', output_mode='separate', output_directory='', auto_process=False, poll_seconds=300, model='small.en', fallback_model='medium.en',
-                bleeptool='S-M-FSM', cpu_threads=2, max_attempts=3, retry_minutes=60,
+                bleeptool='S-M-FSM', cpu_threads=2, max_attempts=3, retry_minutes=60, download_subtitles=True,
                 auto_search=False, auto_blocklist=False, replacement_limit=3, replacement_cooldown_hours=24, swears='damn\nshit\nfuck',
                 device='cpu', compute_type='int8', plex_enabled=False, plex_url='', plex_token='',
                 plex_libraries=[], plex_path_from='', plex_path_to='', plex_note='(Profanity removed by AI)',

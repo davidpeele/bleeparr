@@ -65,7 +65,8 @@ Only the speech compatibility group and subtitle parser/detector have exact Pyth
 | `backend/plex.py` | Exact output matching, managed notes, retry bookkeeping | Mixed-version items cannot receive a blanket cleaned note. |
 | `backend/notifications.py` | Persisted outbox, SMTP transport, delivery history | Email failure must not turn a cleaned media job into failure. |
 | `backend/speech_health.py` | Cached-model evidence and isolated offline runtime check | Share inference lock with media worker; consume lazy results. |
-| `cli/bleeparr.py` | Subtitle selection/checks, matching, speech refinement, rendering, decode validation | Treat as an engine contract; leave its standalone behavior unchanged in this release. |
+| `cli/bleeparr.py` | Subtitle selection/checks, matching, speech refinement, rendering, decode validation | Treat as an engine contract; subtitle recovery validates alternatives before acceptance. |
+| `cli/subtitle_search.py` | Canonical provider identity, release ranking and bounded candidate downloads | Identity matches admit candidates; sampled speech must verify downloaded cuts. |
 | `cli/quality.py` | Identity evidence, sampled alignment, broad-muting plan/token | Reviews happen before rendering and publication. |
 | `frontend/src/App.jsx` | Shell, settings, job actions and result details | Action availability mirrors backend rules but never grants authority. |
 | `frontend/src/Library.jsx` | Manager library browse, monitoring, filters and sorting | Keep manager monitoring distinct from Bleeparr monitoring. |
@@ -82,7 +83,7 @@ Only the speech compatibility group and subtitle parser/detector have exact Pyth
 4. A SHA-256 fingerprint of manager kind, resolved path, size, and modification time deduplicates the source. This is **file identity**, not a whole-media content checksum. Verified output and reviewed legacy signatures prevent rescanning known completions.
 5. A transactional claim marks one job running and increments attempts. The worker captures relevant processing settings at job start and writes a word-list snapshot. Later edits do not silently change that job's processing arguments.
 6. The app plans a hidden stage in the destination filesystem, then invokes the CLI with explicit output, models, strategy, expected identity, guards, result path, and job workspace. A separate process bounds failure impact and allows group termination on shutdown/timeout.
-7. The engine probes input and checks video/audio eligibility; compares usable internal metadata against manager expectations; selects English subtitles; checks text language and coverage; samples subtitle timing; identifies configured matches; refines timestamps through speech models; and checks broad-muting thresholds.
+7. The engine probes input and checks video/audio eligibility; compares usable internal metadata against manager expectations; tries and validates subtitle candidates, including bounded ranked online alternatives; checks text language and coverage; samples subtitle timing; identifies configured matches; refines timestamps through speech models; and checks broad-muting thresholds.
 8. A no-match or known-foreign result creates no cleaned file. A review/failure creates no published cleaned file. A successful render copies video, retains subtitles/chapters/metadata, and writes **one selected muted AAC audio track**. Alternate audio tracks and attachments are omitted to avoid leaving an uncensored alternate track. Some subtitle formats require conversion for MKV compatibility.
 9. Output duration/stream checks and **full selected audio/video decode** must pass. The source signature must still match. This validates playback, not censorship accuracy.
 10. The app records a durable publication receipt. If requested, it verifies an original archive copy using SHA-256 before replacing/deleting anything. Publication uses atomic replacement only for the explicitly selected existing original/recovery target; new destinations use no-clobber hard-link publication on the same filesystem.
@@ -127,7 +128,7 @@ stateDiagram-v2
     blocked --> queued: retry after repair
 ```
 
-Subtitle language/coverage errors are terminal failures with review-oriented explanations; the distinct `review` state is currently used for title, timing, and broad-muting holds. Do not collapse either into success. Retryable codes are limited to missing subtitles, timeout, busy output, changed/missing input, and interruption. Backoff is exponential from `retry_minutes`. Startup moves in-flight jobs to retry. Notifications interrupted after a possible SMTP acceptance become **unknown**, avoiding silent duplicate delivery.
+After candidate recovery is exhausted, subtitle language/coverage errors are terminal failures with review-oriented explanations; the distinct `review` state is currently used for title, timing, and broad-muting holds. Do not collapse either into success. Retryable codes are limited to missing subtitles, timeout, busy output, changed/missing input, and interruption. Backoff is exponential from `retry_minutes`. Startup moves in-flight jobs to retry. Notifications interrupted after a possible SMTP acceptance become **unknown**, avoiding silent duplicate delivery.
 
 ## Safety contracts and heuristics
 

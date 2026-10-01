@@ -249,7 +249,7 @@ def run_job(job, config):
                '--result-json', str(result_path), '--temp-dir', str(job_dir), '--model', config['model'],
                '--fallback-model', config['fallback_model'], '--bleeptool', config['bleeptool'],
                '--cpu-threads', str(config['cpu_threads']), '--device', config['device'], '--compute-type', config['compute_type']]
-    if config.get('verify_title', True) and job.get('item_id', 0) > 0:
+    if job.get('item_id', 0) > 0:
         identity = job.get('identity') or {}
         if isinstance(identity, str):
             identity = json.loads(identity)
@@ -260,7 +260,11 @@ def run_job(job, config):
             except ValueError:
                 pass
         identity = identity or {'title':job['title'].split(' · ')[0]}
-        command += ['--expected-identity', json.dumps(identity)]
+        command += ['--subtitle-identity', json.dumps(identity)]
+        if config.get('verify_title', True):
+            command += ['--expected-identity', json.dumps(identity)]
+    if not config.get('download_subtitles', True):
+        command += ['--no-download-subs']
     if config.get('check_subtitle_timing', True):
         command += ['--check-subtitle-timing']
     if config.get('review_broad_muting', True):

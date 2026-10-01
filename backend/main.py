@@ -109,6 +109,7 @@ class Settings(BaseModel):
     cpu_threads: int = Field(default=2, ge=1, le=32)
     max_attempts: int = Field(default=3, ge=1, le=10)
     retry_minutes: int = Field(default=60, ge=1, le=1440)
+    download_subtitles: bool = True
     auto_search: bool = False
     auto_blocklist: bool = False
     replacement_limit: int = Field(default=3, ge=1, le=10)

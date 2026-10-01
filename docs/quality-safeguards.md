@@ -10,6 +10,14 @@ Bleeparr compares usable internal media titles, years, episode numbers, and runt
 
 Up to six dialogue cues distributed across the program are checked against local speech recognition. The small model runs first; the fallback model checks unconfirmed samples. At least two thirds of samples must match. Insufficient dialogue or mismatched timestamps requires review. Runtime dependency errors stop processing. Passing verifies sampled dialogue only, and does not prove complete coverage or automatically adjust timestamps.
 
+## Subtitle recovery
+
+Selection validates each candidate before accepting it. A wrong language, unreadable SRT, suspicious coverage, or failed timing sample causes Bleeparr to try the next sidecar or eligible embedded full text track. Explicit `--subtitle` requests remain strict: their failure does not silently switch sources. Dry runs validate existing sidecars only, without extraction, speech or network access.
+
+If local candidates fail, the enabled-by-default online subtitle setting invokes Subliminal in one subprocess with a 120-second search/download limit. It downloads at most five unique candidates. Manager metadata supplies canonical title/year/season/episode independently of the title-verification setting; release-group, frame-rate, source and codec matches rank compatible candidates. Results must match series/season/episode (or movie title), plus year when known, or have a matching video hash. The current search uses filename/manager metadata and does not calculate video hashes. Different release versions are allowed, but downloads must pass language, coverage and sampled speech/timestamp checks even when the local timing guard is disabled.
+
+A provider timeout can still leave previously downloaded candidates available for validation. Exhaustion preserves the last subtitle failure and records candidate attempts; the original remains intact. Dependency, speech, storage and invalid-media errors stop processing instead of being treated as subtitle mismatches. Activity shows the candidate history, provider and timing evidence. Selected extracted/downloaded SRTs are saved in the job workspace for original retention after scratch cleanup. Provider availability and accounts can limit discovery; this change does not add provider credential settings or a direct Bazarr integration. Existing matching Bazarr sidecars remain eligible.
+
 ## Broad muting
 
 Defaults require review when subtitle fallback covers more than 25% of matched sections (with at least three fallback sections), total muting exceeds 3% of program duration, or any fallback mute exceeds 10 seconds. The Activity review shows mute counts, durations, and locations before publication.

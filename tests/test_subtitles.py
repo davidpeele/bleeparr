@@ -119,7 +119,7 @@ def test_embedded_selection_reports_absolute_stream_and_skips_foreign_forced(tmp
         Path(command[-1]).write_text('extracted')
     with patch.object(cli,'run',side_effect=extract):
         path, report = cli.resolve_subtitle(args, {'streams':streams}, tmp_path)
-    assert path.name == 'embedded.srt'
+    assert path.name == 'embedded-4.srt'
     assert report['subtitle_stream_index'] == 4
     assert report['subtitle_track_title'] == 'Dialogue'
     assert report['subtitle_declared_language'] == 'eng'

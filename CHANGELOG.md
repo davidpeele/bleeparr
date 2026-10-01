@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Recover automatically from rejected subtitle language, coverage and timing by trying other sidecars, embedded tracks, and up to five ranked Subliminal results. Use canonical manager identity and release details; require downloaded candidates to match sampled speech before processing.
+- Add an online subtitle search setting and show candidate decisions in Activity. Preserve selected extracted/downloaded subtitles for original retention.
+
 ## 3.0.0 — 2026-09-30
 
 Complete rewrite of the web application formerly called Bleeparr 2.0.

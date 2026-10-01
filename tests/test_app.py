@@ -148,6 +148,8 @@ def test_worker_runs_actual_cli_on_synthetic_media(client, tmp_path, monkeypatch
     video = media / 'sample.mkv'
     subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=black:s=160x120:r=10:d=3','-f','lavfi','-i','sine=frequency=440:duration=3','-c:v','mpeg4','-c:a','pcm_s16le',str(video)],check=True)
     video.with_suffix('.srt').write_text('1\n00:00:01,000 --> 00:00:02,000\nDamn. We are going to meet our friends at the station before the train leaves tomorrow morning. Please remember to bring your bag and check that everyone knows where to go. I think we have enough time to walk there together after breakfast. The weather should be pleasant and the children are looking forward to seeing the countryside. We can stop for lunch when we arrive and then visit the museum near the river. It will be a wonderful day if we all stay together and keep an eye on the time.\n')
+    from test_subtitles import FRENCH, write_subs
+    write_subs(video.with_suffix('.en.srt'), [(1, 2)], FRENCH)
     monkeypatch.setenv('BLEEPARR_CLI',str(Path(__file__).parents[1] / 'cli' / 'bleeparr.py'))
     monkeypatch.setenv('OUTPUT_DIR',str(tmp_path / 'cleaned'))
     service.STOP.clear()
@@ -156,6 +158,8 @@ def test_worker_runs_actual_cli_on_synthetic_media(client, tmp_path, monkeypatch
               'check_subtitle_timing':False,'review_broad_muting':False}
     result = service.run_job(candidate,config)
     assert result['success'] and result['fallback_sections'] == 1
+    assert result['subtitle_attempts'][0]['error_code'] == 'subtitle_language_mismatch'
+    assert result['subtitle_attempts'][-1]['status'] == 'accepted'
     assert video.exists() and Path(result['output_path']).exists()
 
 

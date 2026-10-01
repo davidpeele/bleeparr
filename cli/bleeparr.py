@@ -237,44 +237,115 @@ def declared_language(path):
     return 'und'
 
 
-def resolve_subtitle(args, data, scratch):
+def subtitle_candidates(args, data, scratch, search_events):
     if args.subtitle:
         path = Path(args.subtitle)
         if not path.is_file():
             raise ProcessingError('invalid_subtitles', 'Specified subtitle does not exist')
-        return path, dict(subtitle_source='explicit', subtitle_declared_language=declared_language(path), subtitle_stream_index=None)
+        yield path, dict(subtitle_source='explicit', subtitle_declared_language=declared_language(path), subtitle_stream_index=None)
+        return
     base = Path(args.input).with_suffix('')
-    candidates = [Path(str(base) + f'.{lang}.srt') for lang in sorted(language_codes(args.subtitle_lang))]
+    candidates = [Path(str(base) + f'.{lang}{suffix}.srt')
+                  for suffix in ('', '.hi', '.sdh') for lang in sorted(language_codes(args.subtitle_lang))]
     candidates += [Path(str(base) + '.srt'), Path(str(base) + '.hi.srt')]
     for path in candidates:
         if path.is_file() and path.stat().st_size:
-            return path, dict(subtitle_source='sidecar', subtitle_declared_language=declared_language(path), subtitle_stream_index=None)
+            yield path, dict(subtitle_source='sidecar', subtitle_declared_language=declared_language(path), subtitle_stream_index=None)
     if args.dry_run:
-        raise ProcessingError('subtitle_missing', 'Dry run requires existing sidecar subtitles or --subtitle; extraction/download is disabled')
+        return  # Extraction, downloads and speech are disabled in dry runs.
     if not args.no_embedded_subs:
         streams = [s for s in data['streams'] if s['codec_type'] == 'subtitle'
                    and s.get('codec_name') in {'subrip', 'ass', 'ssa', 'mov_text', 'webvtt'}
                    and s.get('tags', {}).get('language', '').lower() in language_codes(args.subtitle_lang)
                    and not s.get('disposition', {}).get('forced', 0)]
         for stream in sorted(streams, key=lambda s: (-s.get('disposition', {}).get('default', 0), s['index'])):
-            dest = scratch / 'embedded.srt'
+            dest = scratch / f"embedded-{stream['index']}.srt"
             try:
                 run(['ffmpeg', '-v', 'error', '-y', '-i', args.input, '-map', f"0:{stream['index']}", '-c:s', 'srt', str(dest)])
                 if dest.stat().st_size:
-                    return dest, dict(subtitle_source='embedded', subtitle_declared_language=stream.get('tags', {}).get('language', 'und').lower(), subtitle_stream_index=stream['index'], subtitle_track_title=stream.get('tags', {}).get('title', ''))
+                    yield dest, dict(subtitle_source='embedded', subtitle_declared_language=stream.get('tags', {}).get('language', 'und').lower(), subtitle_stream_index=stream['index'], subtitle_track_title=stream.get('tags', {}).get('title', ''))
             except ProcessingError as exc:
                 if exc.code != 'processing':
                     raise
     if not args.no_download_subs:
-        # Isolate provider calls in a subprocess so an unresponsive provider is bounded.
-        dest = scratch / 'downloaded.srt'
+        # One bounded subprocess searches and downloads ranked alternatives.
+        destination = scratch / 'subtitle-search'
+        identity = getattr(args, 'subtitle_identity', None) or getattr(args, 'expected_identity', None) or '{}'
         try:
-            run([sys.executable, str(Path(__file__).resolve()), '--download-subtitle', args.input, args.subtitle_lang, str(dest)], args.subtitle_timeout)
-            if dest.is_file() and dest.stat().st_size:
-                return dest, dict(subtitle_source='downloaded', subtitle_declared_language=args.subtitle_lang, subtitle_stream_index=None)
+            run([sys.executable, str(Path(__file__).resolve()), '--download-subtitle-candidates',
+                 args.input, args.subtitle_lang, str(destination), identity], args.subtitle_timeout)
         except ProcessingError as exc:
+            if exc.code not in {'processing', 'timeout'}:
+                raise
+            search_events.append(dict(subtitle_source='provider_search', status='failed',
+                                      error_code=exc.code, error='Subtitle provider search failed or timed out.'))
             print(f'Subtitle search failed ({exc.code})', file=sys.stderr)
+        manifest = destination / 'candidates.json'
+        if manifest.is_file():
+            entries = json.loads(manifest.read_text(encoding='utf-8'))
+            for entry in entries[:5]:
+                # Only our numbered files may be read; provider text is untrusted.
+                name = entry.pop('file')
+                if not re.fullmatch(r'candidate-\d+\.srt', name):
+                    continue
+                path = destination / name
+                if path.is_file() and path.stat().st_size:
+                    yield path, dict(subtitle_source='downloaded', subtitle_declared_language=args.subtitle_lang,
+                                     subtitle_stream_index=None, **entry)
+
+
+def resolve_subtitle(args, data, scratch):
+    """Compatibility helper; processing uses validation-aware selection below."""
+    for candidate in subtitle_candidates(args, data, scratch, []):
+        return candidate
     raise ProcessingError('subtitle_missing', 'No matching full text subtitles found; image subtitles require OCR or an external SRT')
+
+
+def select_subtitle(args, data, scratch, audio, duration):
+    from cli import quality
+    attempts = []
+    rejected = None
+    recoverable = {'invalid_subtitles', 'subtitle_language_mismatch', 'subtitle_language_uncertain',
+                   'subtitle_coverage_suspect', 'subtitle_alignment_review'}
+    for path, selection in subtitle_candidates(args, data, scratch, attempts):
+        report = {}
+        try:
+            subtitles, report = inspect_subtitles(path, args.subtitle_lang, duration, selection)
+            # Downloaded releases always need independent evidence of a matching
+            # cut, even if the user disabled timing checks for local subtitles.
+            if not args.dry_run and (args.check_subtitle_timing or selection['subtitle_source'] == 'downloaded'):
+                try:
+                    report['subtitle_alignment'] = quality.alignment(args, subtitles, scratch, audio, duration,
+                        subtitle_text, tokens, load_speech_model, extract_clip)
+                except quality.QualityReview as exc:
+                    raise ProcessingError(exc.code, str(exc), {**report, **exc.details}) from exc
+        except ProcessingError as exc:
+            attempt = dict(**selection, subtitle_file=path.name, status='rejected',
+                           error_code=exc.code, error=str(exc))
+            if exc.details.get('subtitle_alignment'):
+                attempt['subtitle_alignment'] = exc.details['subtitle_alignment']
+            attempts.append(attempt)
+            exc.details['subtitle_attempts'] = list(attempts)
+            if exc.code not in recoverable or args.subtitle:
+                raise
+            rejected = exc
+            print(f"Rejected subtitle {path.name}: {exc.code}; trying another candidate", flush=True)
+            continue
+        attempts.append(dict(**selection, subtitle_file=path.name, status='accepted'))
+        report['subtitle_attempts'] = list(attempts)
+        # Preserve extracted/downloaded subtitles for the app's retention layer,
+        # which runs after the CLI has removed its scratch directory.
+        if not args.dry_run and args.temp_dir and selection['subtitle_source'] in {'embedded', 'downloaded'}:
+            saved = Path(args.temp_dir) / 'selected-subtitle.srt'
+            shutil.copy2(path, saved)
+            report['subtitle_path'] = str(saved)
+            path = saved
+        return path, subtitles, report
+    if rejected:
+        rejected.details['subtitle_attempts'] = list(attempts)
+        raise rejected
+    raise ProcessingError('subtitle_missing', 'No suitable full text subtitles found; add a matching SRT or check subtitle providers.',
+                          {'subtitle_attempts': attempts})
 
 
 def download_subtitle(video, language, destination):
@@ -505,8 +576,7 @@ def process(args):
     if output.exists() and not args.dry_run:
         raise ProcessingError('output_exists', f'Output already exists: {output}')
     if args.dry_run:
-        subtitle, selection = resolve_subtitle(args, data, None)
-        subtitles, subtitle_report = inspect_subtitles(subtitle, args.subtitle_lang, duration, selection)
+        subtitle, subtitles, subtitle_report = select_subtitle(args, data, None, audio, duration)
         report.update(subtitle_report)
         sections = matching_sections(subtitles, swears, duration)
         return dict(success=True, dry_run=True, candidate_sections=len(sections), output_path=None, audio_stream=audio,
@@ -521,16 +591,9 @@ def process(args):
         with output_lock(output):
             if output.exists():
                 raise ProcessingError('output_exists', f'Output already exists: {output}')
-            subtitle, selection = resolve_subtitle(args, data, scratch)
-            subtitles, subtitle_report = inspect_subtitles(subtitle, args.subtitle_lang, duration, selection)
+            subtitle, subtitles, subtitle_report = select_subtitle(args, data, scratch, audio, duration)
             report.update(subtitle_report)
             print('Subtitle check: ' + json.dumps(report), flush=True)
-            if args.check_subtitle_timing:
-                try:
-                    report['subtitle_alignment'] = quality.alignment(args, subtitles, scratch, audio, duration,
-                        subtitle_text, tokens, load_speech_model, extract_clip)
-                except quality.QualityReview as exc:
-                    raise ProcessingError(exc.code, str(exc), {**report, **exc.details}) from exc
             sections = matching_sections(subtitles, swears, duration)
             counts = match_counts(sections)
             if not sections:
@@ -622,6 +685,7 @@ def parser():
     p.add_argument('--alert-censoring-off', action='store_true', help='Compatibility option; words are no longer printed in logs')
     p.add_argument('--result-json', help='Write a structured result for automation (also on failure)')
     p.add_argument('--expected-identity', help='JSON title/year/episode/runtime metadata from the manager')
+    p.add_argument('--subtitle-identity', help='JSON manager identity for subtitle discovery independent of title verification')
     p.add_argument('--check-subtitle-timing', action='store_true')
     p.add_argument('--review-broad-muting', action='store_true')
     p.add_argument('--max-fallback-percent', type=float, default=25)
@@ -674,5 +738,8 @@ def main(argv=None):
 if __name__ == '__main__':
     if len(sys.argv) == 5 and sys.argv[1] == '--download-subtitle':
         download_subtitle(*sys.argv[2:])
+    elif len(sys.argv) == 6 and sys.argv[1] == '--download-subtitle-candidates':
+        from cli.subtitle_search import download_candidates
+        download_candidates(sys.argv[2], sys.argv[3], sys.argv[4], json.loads(sys.argv[5]))
     else:
         sys.exit(main())
